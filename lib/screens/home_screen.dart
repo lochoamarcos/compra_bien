@@ -787,7 +787,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
     try {
       final packageInfo = await PackageInfo.fromPlatform();
-      final currentVersion = packageInfo.version;
+      final currentVersion = '${packageInfo.version}+${packageInfo.buildNumber}';
 
       final url = Uri.parse(AppConfig.updatesInfoUrl);
       
