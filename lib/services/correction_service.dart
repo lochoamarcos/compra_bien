@@ -57,16 +57,18 @@ class CorrectionService {
        }
     }
 
-    // 2. Metadata (Simplified)
+    // 3. Metadata (Simplified)
     final deviceInfo = await _getDeviceInfo();
-    
-    // 3. Insert to Supabase
+    final userId = await getUniqueUserId(); // To prevent double-voting
+
+    // 4. Insert to Supabase
     try {
       await Supabase.instance.client.from(_reportsTable).insert({
         'ean': ean,
         'market': market,
         'suggested_price': suggestedPrice,
         'suggested_offer': suggestedOffer,
+        'user_id': userId,
         'metadata': {
             'device': deviceInfo,
             'original_name': originalName ?? 'unknown',
@@ -97,6 +99,67 @@ class CorrectionService {
         return "Unknown Device";
      } catch (_) {
         return "Unknown";
+     }
+  }
+
+  static Future<String> getUniqueUserId() async {
+     final prefs = await SharedPreferences.getInstance();
+     String? id = prefs.getString('supabase_user_id');
+     if (id == null) {
+        id = DateTime.now().millisecondsSinceEpoch.toString() + "_" + (Platform.isAndroid ? 'and' : 'ios'); 
+        await prefs.setString('supabase_user_id', id);
+     }
+     return id;
+  }
+
+  /// Uploads an image to Supabase Storage and returns the Public URL
+  static Future<String?> uploadImage(File imageFile, String fileName) async {
+     try {
+        final String path = 'reports/$fileName';
+        await Supabase.instance.client.storage
+            .from('product-reports')
+            .upload(path, imageFile);
+
+        final String publicUrl = Supabase.instance.client.storage
+            .from('product-reports')
+            .getPublicUrl(path);
+
+        return publicUrl;
+     } catch (e) {
+        print('Error uploading image to Supabase: $e');
+        return null;
+     }
+  }
+
+  /// Fetches pending reports from other users for this EAN
+  /// (To show in Social Voting UI)
+  static Future<List<Map<String, dynamic>>> fetchPendingReports(String ean) async {
+     try {
+        final userId = await getUniqueUserId();
+        final response = await Supabase.instance.client
+            .from('pending_voted_reports') 
+            .select()
+            .eq('ean', ean)
+            .neq('user_id', userId); // Don't show my own reports to me
+
+        return List<Map<String, dynamic>>.from(response);
+     } catch (e) {
+        print('Error fetching pending reports: $e');
+        return [];
+     }
+  }
+
+  /// Votes for a report
+  static Future<bool> voteReport(String reportId, bool isUpvote) async {
+     try {
+        await Supabase.instance.client.rpc('vote_report', params: {
+           'report_id': reportId,
+           'is_upvote': isUpvote
+        });
+        return true;
+     } catch (e) {
+        print('Error voting for report: $e');
+        return false;
      }
   }
 }

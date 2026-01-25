@@ -632,7 +632,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                       controller: nameController,
                       decoration: const InputDecoration(
                         labelText: 'Tu Nombre (Opcional)',
-                        hintText: 'Para contactarte si es necesario',
+                        hintText: 'Para contactarte (Opcional)',
                         border: OutlineInputBorder(),
                       ),
                     ),
@@ -791,7 +791,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
       final url = Uri.parse(AppConfig.updatesInfoUrl);
       
-      final response = await http.get(url, headers: {"ngrok-skip-browser-warning": "true"}).timeout(const Duration(seconds: 10));
+      final response = await http.get(url).timeout(const Duration(seconds: 10));
       
       if (context.mounted) Navigator.pop(context); // Close loading
 
@@ -803,7 +803,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             // Update Available
             String downloadUrl = data['downloadUrl'] ?? AppConfig.updatesUrl;
             if (downloadUrl.startsWith('/')) {
-              downloadUrl = '${AppConfig.serverBaseUrl}$downloadUrl';
+               // Should not happen with Supabase, but strictly speaking we don't have serverBaseUrl anymore.
+               // We will assume it's a relative path from the bucket or just ignore/log.
+               debugPrint('Resolving relative update URL: $downloadUrl');
+               downloadUrl = 'https://wqxghiwfudhzdiyyyick.storage.supabase.co/storage/v1/object/public/app-releases$downloadUrl';
             }
             _showUpdateDialog(context, currentVersion, serverVersion, downloadUrl);
         } else {

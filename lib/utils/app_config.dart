@@ -1,8 +1,9 @@
 class AppConfig {
-  static const String serverBaseUrl = 'https://yolanda-metapsychological-consentaneously.ngrok-free.dev';
-  // static const String serverBaseUrl = 'http://172.29.160.45:8080';
-  
-  static const String updatesUrl = '$serverBaseUrl/api/public/updates/compraBien/fetch/latest';
-  static const String updatesInfoUrl = '$serverBaseUrl/api/public/updates/compraBien/info';
-  static const String reportsUrl = '$serverBaseUrl/api/public/reports/compraBien';
+  // Supabase Storage URLs for Serverless Updates
+  static const String updatesUrl = 'https://wqxghiwfudhzdiyyyick.storage.supabase.co/storage/v1/object/public/app-releases/app-arm64-v8a-release.apk';
+  static const String updatesInfoUrl = 'https://wqxghiwfudhzdiyyyick.storage.supabase.co/storage/v1/object/public/app-releases/version.json';
+
+  // Legacy/Reference (Deprecated)
+  // static const String serverBaseUrl = 'https://yolanda-metapsychological-consentaneously.ngrok-free.dev';
+  // static const String reportsUrl = '$serverBaseUrl/api/public/reports/compraBien';
 }

@@ -1,11 +1,13 @@
 import 'dart:convert';
 import 'dart:async';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/ota_logger.dart';
 import '../utils/app_config.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'dart:io';
+import 'correction_service.dart';
 
 
 class PendingReport {
@@ -38,7 +40,7 @@ class PendingReport {
 
 class ReportService {
   static const String _queueKey = 'pending_reports_queue';
-  static const String _baseUrl = AppConfig.reportsUrl;
+  // static const String _baseUrl = AppConfig.reportsUrl; // Deprecated for Supabase
 
   // Horario: 11:30 AM (11:30) hasta 12:00 AM (00:00 del día siguiente)
   static bool get isServerOnline {
@@ -49,14 +51,14 @@ class ReportService {
     return now.isAfter(start) && now.isBefore(end);
   }
 
-  /// Checks if server is reachable (Ping)
+  /// Checks if server (Supabase) is reachable 
+  /// In this serverless model, we assume generic connectivity.
+  /// Ideally, use connectivity_plus, but for now we return true
+  /// or check google.com.
   static Future<bool> checkServerStatus() async {
-      try {
-          final res = await http.get(Uri.parse('$_baseUrl/health')).timeout(const Duration(seconds: 3));
-          return res.statusCode == 200;
-      } catch (e) {
-          return false; 
-      }
+       // Supabase SDK handles offline sync usually, but we can do a simple ping if needed.
+       // For now, assume true to allow submitting to queue/sdk.
+       return true; 
   }
 
   /// Tries to submit a report.
@@ -86,27 +88,31 @@ class ReportService {
     // Read OTA logs if they exist (attach to ANY report for better debugging context)
     otaLogs = await OTALogger.readLogs();
 
+    // Attach User ID to message or metadata? 
+    // We can use Supabase Metadata column
+    final deviceInfo = await _gatherMetadata();
+    final uid = await CorrectionService.getUniqueUserId();
+
     for (int i = 0; i < retries; i++) {
         try {
-            final body = {
-                'categoria': category, 
-                'mensaje': message, 
-                'usuario': userName, // Sending user name
-                'timestamp': DateTime.now().toIso8601String(),
-                'otaLogs': otaLogs ?? '', // Always send otaLogs, even if empty string
-            };
+            // Supabase Insert to 'feedback' table
+            await Supabase.instance.client.from('feedback').insert({
+                'category': category,
+                'message': message,
+                'user_id': uid, // Persistent ID
+                'metadata': {
+                    'username': userName,
+                    'device': deviceInfo,
+                    'ota_logs': otaLogs ?? '', 
+                    'timestamp': DateTime.now().toIso8601String()
+                },
+                'status': 'open'
+            });
 
-            final response = await http.post(
-                Uri.parse(_baseUrl),
-                headers: {'Content-Type': 'application/json'},
-                body: jsonEncode(body),
-            ).timeout(const Duration(seconds: 5));
+            return true; // Success
 
-            if (response.statusCode == 200) {
-                 return true;
-            }
         } catch (e) {
-             print('Intento ${i + 1} fallido: $e');
+             print('Intento ${i + 1} fallido (Supabase): $e');
         }
       
         if (i < retries - 1) {
@@ -205,6 +211,12 @@ class ReportService {
         sb.writeln("Device Info: Unavailable ($e)");
     }
     
+    // Attach Persistent Silent ID
+    try {
+       String uid = await CorrectionService.getUniqueUserId();
+       sb.writeln("UID: $uid");
+    } catch (_) {}
+
     return sb.toString();
   }
 }

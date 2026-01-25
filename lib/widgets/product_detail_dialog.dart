@@ -47,6 +47,8 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
 
   // Correction/Report State
   bool _showCorrectionForm = false;
+  List<Map<String, dynamic>> _pendingReports = [];
+  bool _isLoadingSocial = false;
   final TextEditingController _correctionPriceController = TextEditingController();
   final TextEditingController _correctionOfferController = TextEditingController(); // e.g. "2da al 50%"
   XFile? _correctionImage;
@@ -62,8 +64,19 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
     } else {
       _selectedMarketName = (widget.products.first['style'] as MarketStyle).name;
     }
+    _fetchSocialReports();
   }
 
+  Future<void> _fetchSocialReports() async {
+     setState(() => _isLoadingSocial = true);
+     final reports = await CorrectionService.fetchPendingReports(widget.result.ean);
+     if (mounted) {
+        setState(() {
+           _pendingReports = reports;
+           _isLoadingSocial = false;
+        });
+     }
+  }
   // --- Helpers ---
   
   String _getSpecialOfferText(String? description) {
@@ -154,19 +167,33 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
                         ),
                         const SizedBox(width: 8),
                         Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text(
-                              NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 0).format(selectedProd.price),
-                              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: selectedStyle.primaryColor),
-                            ),
-                            if (selectedProd.oldPrice != null)
-                              Text(
-                                NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 0).format(selectedProd.oldPrice),
-                                style: const TextStyle(fontSize: 14, color: Colors.grey, decoration: TextDecoration.lineThrough),
-                              ),
-                          ],
+                           crossAxisAlignment: CrossAxisAlignment.end,
+                           children: [
+                             Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                   if (_pendingReports.isNotEmpty)
+                                      Padding(
+                                         padding: const EdgeInsets.only(right: 4.0),
+                                         child: Tooltip(
+                                            message: 'Hay reportes de la comunidad',
+                                            child: Icon(Icons.warning_amber_rounded, size: 20, color: Colors.orange),
+                                         ),
+                                      ),
+                                   Text(
+                                      NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 0).format(selectedProd.price),
+                                      style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: selectedStyle.primaryColor),
+                                   ),
+                                ]
+                             ),
+                             if (selectedProd.oldPrice != null)
+                               Text(
+                                 NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 0).format(selectedProd.oldPrice),
+                                 style: const TextStyle(fontSize: 14, color: Colors.grey, decoration: TextDecoration.lineThrough),
+                               ),
+                           ],
                         ),
+
                       ],
                     ),
                     
@@ -325,7 +352,7 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
                    children: [
                       Text('Buscar en $marketName', style: TextStyle(fontWeight: FontWeight.bold, color: MarketStyle.get(marketName).primaryColor)),
                       const Spacer(),
-                      IconButton(icon: const Icon(Icons.close, size: 16), onPressed: () => setState(() => _searchingMarket = null))
+                      IconButton(icon: const Icon(Icons.close, size: 16, color: Colors.red), onPressed: () => setState(() => _searchingMarket = null))
                    ]
                 ),
                 Row(
@@ -356,9 +383,17 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
                                 dense: true,
                                 contentPadding: EdgeInsets.zero,
                                 leading: p.imageUrl != null 
-                                   ? IconButton(
-                                        icon: const Icon(Icons.image, size: 20, color: Colors.blue),
-                                        onPressed: () => _showImagePreview(context, p.imageUrl!),
+                                   ? SizedBox(
+                                       width: 40, height: 40,
+                                       child: InkWell(
+                                          onTap: () => _showImagePreview(context, p.imageUrl!),
+                                          child: CachedNetworkImage(
+                                             imageUrl: p.imageUrl!, 
+                                             fit: BoxFit.cover,
+                                             placeholder: (_,__) => const Center(child: Icon(Icons.image, size: 20, color: Colors.grey)),
+                                             errorWidget: (_,__,___) => const Icon(Icons.error, size: 20),
+                                          ),
+                                       ),
                                      )
                                    : const SizedBox(width: 40),
                                 title: Text(p.name, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
@@ -393,20 +428,7 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
       );
   }
 
-  void _showImagePreview(BuildContext context, String url) {
-     showDialog(
-        context: context,
-        builder: (ctx) => Dialog(
-           child: InteractiveViewer(
-              child: CachedNetworkImage(
-                 imageUrl: url,
-                 placeholder: (_,__) => const SizedBox(height: 50, child: Center(child: CircularProgressIndicator())),
-                 errorWidget: (_, __, ___) => const Icon(Icons.error),
-              )
-           )
-        )
-     );
-  }
+
 
   void _initiateManualSuggestion(String marketName) {
       // Allow suggesting correction for a missing market
@@ -447,9 +469,7 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
          setState(() => _searchingMarket = null);
          // Force redraw of parents if needed by popping or setState? 
          // The Provider notifyListeners should handle it, but this Dialog uses `widget.products` which is passed in.
-         // Wait, `widget.products` is a List<Map> constructed in `ProductCard`. 
-         // If `ProductCard` rebuilds (due to Provider), it will re-pass likely?
-         // Actually, `ProductCard` is the parent. We might need to close and reopen or just accept that the Dialog
+         // Wait, `ProductCard` is the parent. We might need to close and reopen or just accept that the Dialog
          // content might not refresh fully unless we are reactive to the Provider HERE too.
          // BUT, we are closing the dialog usually? No, user wants to see it "vinculado".
          // Let's close the dialog to force refresh in list, OR better:
@@ -518,9 +538,10 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
          );
       }
   
-      // Show Bulk Reporting "Checkbox list" style first
+      // Show Bulk Reporting "Checkbox list" style
       return Column(
           children: [
+              if (_pendingReports.isNotEmpty) _buildSocialVotingCard(),
               Consumer<ReportProvider>(
                 builder: (context, reportProvider, child) {
                    final isReported = reportProvider.isReported(widget.result);
@@ -585,7 +606,13 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
                               _correctionOfferController.text = _getSpecialOfferText(selectedProd.promoDescription);
                            });
                         },
-                        child: Text('Sugerir Edición ($_selectedMarketName)', style: const TextStyle(fontSize: 12))
+                        child: Column(
+                           crossAxisAlignment: CrossAxisAlignment.end,
+                           children: [
+                              const Text('Sugerir Edición', style: TextStyle(fontSize: 12)),
+                              Text('($_selectedMarketName)', style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                           ]
+                        )
                     )
                  ],
               )
@@ -621,5 +648,147 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Por favor esperá unos minutos antes de enviar otro reporte.')));
         }
      }
+  }
+
+  Widget _buildSocialVotingCard() {
+     return Container(
+        margin: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+           color: Colors.blue.withOpacity(0.1),
+           borderRadius: BorderRadius.circular(12),
+           border: Border.all(color: Colors.blue.withOpacity(0.3)),
+        ),
+        child: Column(
+           crossAxisAlignment: CrossAxisAlignment.start,
+           children: [
+              Row(
+                 children: [
+                    const Icon(Icons.people, color: Colors.blue, size: 20),
+                    const SizedBox(width: 8),
+                    const Text('Aporte de la Comunidad', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
+                    const Spacer(),
+                    Text('${_pendingReports.length} reporte(s)', style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                 ],
+              ),
+              const SizedBox(height: 8),
+              ..._pendingReports.map((report) {
+                 final price = report['suggested_price'];
+                 final offer = report['suggested_offer'];
+                 final img = report['image_url'];
+                 
+                 return Column(
+                    children: [
+                       const Divider(height: 16),
+                       Row(
+                          children: [
+                             Expanded(
+                                child: Column(
+                                   crossAxisAlignment: CrossAxisAlignment.start,
+                                   children: [
+                                      Text('Dicen que está a: \$${price ?? "N/A"}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                      if (offer != null) Text('Oferta: $offer', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                                   ],
+                                ),
+                             ),
+                             if (img != null)
+                                GestureDetector(
+                                   onTap: () => _showImagePreview(context, img),
+                                   child: Container(
+                                      width: 40,
+                                      height: 40,
+                                      margin: const EdgeInsets.only(left: 8),
+                                      decoration: BoxDecoration(
+                                         borderRadius: BorderRadius.circular(4),
+                                         image: DecorationImage(image: NetworkImage(img), fit: BoxFit.cover),
+                                      ),
+                                   ),
+                                ),
+                             const SizedBox(width: 8),
+                             IconButton(
+                                icon: const Icon(Icons.thumb_up_alt_outlined, color: Colors.green),
+                                onPressed: () => _handleVote(report['id'], true),
+                             ),
+                             IconButton(
+                                icon: const Icon(Icons.thumb_down_alt_outlined, color: Colors.red),
+                                onPressed: () => _handleVote(report['id'], false),
+                             ),
+                          ],
+                       ),
+                    ],
+                 );
+              }).toList(),
+           ],
+        ),
+     );
+  }
+
+  Future<void> _handleVote(String reportId, bool isUpvote) async {
+     final ok = await CorrectionService.voteReport(reportId, isUpvote);
+     if (ok && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('¡Voto registrado! Gracias.')));
+        _fetchSocialReports(); // Refresh
+     }
+  }
+
+
+
+  void _showImagePreview(BuildContext context, String url) {
+     showDialog(
+        context: context,
+        builder: (_) => Dialog(
+           child: Stack(
+              children: [
+                 InteractiveViewer(child: Image.network(url)),
+                 Positioned(top: 10, right: 10, child: IconButton(icon: const Icon(Icons.close, color: Colors.white), onPressed: () => Navigator.pop(context))),
+                 Positioned(
+                    bottom: 10, right: 10, 
+                    child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.red.withOpacity(0.8), foregroundColor: Colors.white),
+                        icon: const Icon(Icons.flag, size: 16),
+                        label: const Text('Reportar Foto/Error'),
+                        onPressed: () {
+                           Navigator.pop(context); // Close preview
+                           // Open report dialog pre-filled? Or Show dedicated mismatch dialog?
+                           // User said: "mira la foto... ve que es el six pack... reportar eso"
+                           // Let's use submitReport directly or open a form.
+                           // Simpler: Show confirmation to report "Bad Match"
+                           showDialog(
+                              context: context,
+                              builder: (ctx) => AlertDialog(
+                                 title: const Text('¿Reportar error en la foto/producto?'),
+                                 content: const Text('¿Esta foto no corresponde al producto o el precio es muy diferente (ej: unidad vs pack)?'),
+                                 actions: [
+                                    TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+                                    ElevatedButton(
+                                       style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+                                       onPressed: () async {
+                                          Navigator.pop(ctx);
+                                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enviando reporte...')));
+                                          
+                                          // Send report for this specific market's EAN/Link
+                                          // We need to know WHICH market this URL belongs to. 
+                                          // The `_showImagePreview` only gets URL. We should pass the market name too.
+                                          // Refactor needed: pass marketName to _showImagePreview.
+                                          // For now, we use _selectedMarketName?
+                                          // But this preview might come from Search Result (Thumbnail) which passes just URL.
+                                          // Let's defer this logic or assume Generic Report.
+                                          
+                                          await ReportService.submitReport("Error Foto/Vinculación", "El usuario reportó que la imagen/producto vinculado es incorrecto.\nURL: $url");
+                                          
+                                          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Gracias. Revisaremos este vínculo.')));
+                                       }, 
+                                       child: const Text('Si, Reportar')
+                                    )
+                                 ],
+                              )
+                           );
+                        }
+                    )
+                 ),
+              ],
+           ),
+        ),
+     );
   }
 }

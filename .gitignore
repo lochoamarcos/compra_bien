@@ -32,14 +32,33 @@ migrate_working_dir/
 .pub/
 /build/
 /coverage/
-
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+build/
 # Symbolication related
 app.*.symbols
 
 # Obfuscation related
 app.*.map.json
 
-# Android Studio will place build artifacts here
+# Android relacionado
+**/android/**/generated/
+**/android/key.properties
+**/*.keystore
+**/*.jks
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# iOS relacionado
+**/ios/Flutter/.last_build_id
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/flutter_export_environment.sh
+
+# VS Code y OS
+.vscode/
+.DS_Store
+*.log

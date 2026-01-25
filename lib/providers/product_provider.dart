@@ -24,7 +24,6 @@ class ProductProvider with ChangeNotifier {
   int _currentPage = 0;
   bool _hasMore = true;
   String _currentQuery = '';
-  String _currentQuery = '';
   final Set<String> _processedEans = {}; // To avoid duplicates
 
   // Corrections State

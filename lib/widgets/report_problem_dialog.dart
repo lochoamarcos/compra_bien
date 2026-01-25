@@ -117,7 +117,22 @@ class _ReportProblemDialogState extends State<ReportProblemDialog> {
                                children: [
                                   Text('Productos Adjuntos (${provider.reportList.length})', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.deepOrange)),
                                   TextButton(
-                                     onPressed: provider.clearList,
+                                     onPressed: () {
+                                       showDialog(
+                                          context: context, 
+                                          builder: (ctx) => AlertDialog(
+                                              title: const Text('¿Borrar todo?'),
+                                              content: const Text('¿Estás seguro de quitar todos los productos adjuntos?'),
+                                              actions: [
+                                                  TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+                                                  TextButton(onPressed: () {
+                                                      provider.clearList();
+                                                      Navigator.pop(ctx);
+                                                  }, child: const Text('Borrar', style: TextStyle(color: Colors.red))),
+                                              ],
+                                          )
+                                       );
+                                     },
                                      style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
                                      child: const Text('Borrar todos', style: TextStyle(fontSize: 11))
                                   )
@@ -162,7 +177,7 @@ class _ReportProblemDialogState extends State<ReportProblemDialog> {
               TextField(
                 controller: _nameController,
                 decoration: const InputDecoration(
-                  hintText: 'Ej: Juan Pérez',
+                  hintText: '(Opcional)',
                   border: OutlineInputBorder(),
                   contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 ),
