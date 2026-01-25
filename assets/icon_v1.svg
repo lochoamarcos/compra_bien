@@ -1,0 +1,18 @@
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- Circle Background -->
+  <circle cx="100" cy="100" r="90" fill="#4B6A42" />
+  
+  <!-- Shopping Cart -->
+  <path d="M50 60 H 130 L 120 130 H 60 Z" fill="none" stroke="white" stroke-width="8" stroke-linejoin="round" />
+  <circle cx="70" cy="150" r="8" fill="white" />
+  <circle cx="110" cy="150" r="8" fill="white" />
+  <path d="M40 60 H 50" stroke="white" stroke-width="8" stroke-linecap="round"/>
+
+  <!-- Money Stack -->
+  <rect x="70" y="40" width="40" height="20" rx="4" fill="#85BB65" stroke="white" stroke-width="2"/>
+  <rect x="75" y="35" width="40" height="20" rx="4" fill="#85BB65" stroke="white" stroke-width="2"/>
+  <rect x="80" y="30" width="40" height="20" rx="4" fill="#85BB65" stroke="white" stroke-width="2"/>
+  
+  <!-- Symbol -->
+  <text x="100" y="46" font-family="sans-serif" font-size="12" fill="white" text-anchor="middle">$</text>
+</svg>

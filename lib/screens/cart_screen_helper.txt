@@ -1,0 +1,55 @@
+
+  Widget _buildSavingsSummary(CartProvider cart, NumberFormat currency) {
+     double monarcaTotal = 0;
+     double carrefourTotal = 0;
+     bool missingMonarca = false;
+     bool missingCarrefour = false;
+
+     for (var item in cart.items) {
+       // Current Item Price
+       double price = item.product.price;
+       String source = item.product.source;
+
+       // Monarca Calculation
+       if (source == 'Monarca') {
+         monarcaTotal += price * item.quantity;
+       } else if (item.competitorName == 'Monarca' && item.competitorPrice != null) {
+         monarcaTotal += item.competitorPrice! * item.quantity;
+       } else {
+         missingMonarca = true;
+         // Assume we pay the current price (worst case) or exclude? 
+         // Strategy: If missing, we assume we buy it at the place we found it, 
+         // so it contributes to the 'bundle' cost, but marks it as 'mixed'.
+         monarcaTotal += price * item.quantity; 
+       }
+
+       // Carrefour Calculation
+       if (source == 'Carrefour') {
+         carrefourTotal += price * item.quantity;
+       } else if (item.competitorName == 'Carrefour' && item.competitorPrice != null) {
+         carrefourTotal += item.competitorPrice! * item.quantity;
+       } else {
+         missingCarrefour = true;
+         carrefourTotal += price * item.quantity;
+       }
+     }
+     
+     // Calculate Potential Savings
+     double currentTotal = cart.totalAmount;
+     double savedIfAllMonarca = currentTotal - monarcaTotal;
+     double savedIfAllCarrefour = currentTotal - carrefourTotal;
+
+     return Column(
+       crossAxisAlignment: CrossAxisAlignment.stretch,
+       children: [
+         const Text('Análisis Inteligente', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+         const SizedBox(height: 8),
+         if (!missingMonarca && savedIfAllMonarca > 0)
+           Text('Comprando todo en Monarca ahorras: ${currency.format(savedIfAllMonarca)}', style: const TextStyle(color: Colors.green, fontSize: 12)),
+         if (!missingCarrefour && savedIfAllCarrefour > 0)
+           Text('Comprando todo en Carrefour ahorras: ${currency.format(savedIfAllCarrefour)}', style: const TextStyle(color: Colors.blue, fontSize: 12)),
+         if (savedIfAllMonarca <= 0 && savedIfAllCarrefour <= 0)
+           const Text('¡Tienes la mejor combinación posible!', style: TextStyle(color: Colors.green, fontStyle: FontStyle.italic, fontSize: 12)),
+       ],
+     );
+  }
