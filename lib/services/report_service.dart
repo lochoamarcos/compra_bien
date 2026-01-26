@@ -44,11 +44,8 @@ class ReportService {
 
   // Horario: 11:30 AM (11:30) hasta 12:00 AM (00:00 del día siguiente)
   static bool get isServerOnline {
-    final now = DateTime.now();
-    final start = DateTime(now.year, now.month, now.day, 11, 30);
-    final end = DateTime(now.year, now.month, now.day, 18, 0); // Aligned to 18:00
-    
-    return now.isAfter(start) && now.isBefore(end);
+    // Supabase is always online (24/7). Legacy schedule removed.
+    return true;
   }
 
   /// Checks if server (Supabase) is reachable 
@@ -147,7 +144,8 @@ class ReportService {
       return;
     }
     
-    if (!isServerOnline) return;
+    // always online with Supabase
+    // if (!isServerOnline) return; 
 
     _isProcessing = true; // Bloqueo anti-bucle / concurrencia
 

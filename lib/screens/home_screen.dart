@@ -678,7 +678,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                        bool isOnline = await ReportService.checkServerStatus();
                        if (!isOnline && context.mounted) {
                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Aviso: Servidor fuera de horario. El reporte se guardará localmente.'))
+                              const SnackBar(content: Text('Aviso: Error de conexión. El reporte se guardará localmente.'))
                            );
                        }
 
@@ -799,14 +799,21 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         final data = jsonDecode(response.body);
         final String? serverVersion = data['version'];
 
-        if (serverVersion != null && serverVersion != currentVersion) {
-            // Update Available
-            String downloadUrl = data['downloadUrl'] ?? AppConfig.updatesUrl;
+        if (serverVersion != null) {
+            // Compare only semantic version (split by +)
+            final currentBase = currentVersion.split('+').first;
+            final serverBase = serverVersion.split('+').first;
+
+            if (currentBase != serverBase) {
+                // Update Available (Version changed)
+                String downloadUrl = data['downloadUrl'] ?? AppConfig.updatesUrl;
             if (downloadUrl.startsWith('/')) {
                // Should not happen with Supabase, but strictly speaking we don't have serverBaseUrl anymore.
                // We will assume it's a relative path from the bucket or just ignore/log.
                debugPrint('Resolving relative update URL: $downloadUrl');
-               downloadUrl = 'https://wqxghiwfudhzdiyyyick.storage.supabase.co/storage/v1/object/public/app-releases$downloadUrl';
+               // Use the base URL from the info URL for consistency
+               final base = AppConfig.updatesInfoUrl.split('/version.json').first;
+               downloadUrl = '$base$downloadUrl';
             }
             _showUpdateDialog(context, currentVersion, serverVersion, downloadUrl);
         } else {
@@ -1149,9 +1156,9 @@ class _OtaUpdateDialogContentState extends State<_OtaUpdateDialogContent> {
               }
             }
           } else if (event.status == OtaStatus.INSTALLING) {
-            _status = 'Instalando... La app se cerrará.';
+            _status = '¡Descarga completa! Iniciando instalación...';
             _progressValue = 100.0;
-            OTALogger.log('Instalando APK...');
+            OTALogger.log('Iniciando proceso de instalación de APK...');
             // Clear logs on successful installation (app will restart)
             OTALogger.clearLogs();
           } else if (event.status == OtaStatus.PERMISSION_NOT_GRANTED_ERROR) {
