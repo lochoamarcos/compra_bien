@@ -4,11 +4,13 @@ import '../data/carrefour_repository.dart';
 import '../data/coope_repository.dart';
 import '../data/vea_repository.dart';
 import '../models/product.dart';
+import '../models/correction.dart';
 import '../utils/market_branding.dart';
 import '../utils/app_logger.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../services/correction_service.dart';
+import '../services/report_service.dart';
 
 class ProductProvider with ChangeNotifier {
   final MonarcaRepository _monarcaRepo = MonarcaRepository();
@@ -28,7 +30,8 @@ class ProductProvider with ChangeNotifier {
 
   // Corrections State
   bool _correctionsLoaded = false;
-  Map<String, dynamic> _activeCorrections = {};
+  Map<String, Correction> _activeCorrections = {}; 
+  Map<String, double> _acceptedPriceOverrides = {};
 
   List<ComparisonResult> get searchResults => _searchResults;
   List<ComparisonResult> _categoryResults = [];
@@ -146,7 +149,9 @@ class ProductProvider with ChangeNotifier {
   
   String? _currentCategory; // Track if we are in category mode
 
-  Future<void> searchByCategory(String category) async {
+  Future<void> searchByCategory(String category, {Set<String>? activeMarkets}) async {
+      _activeMarkets = activeMarkets ?? {'Monarca', 'Carrefour', 'Vea', 'La Coope'};
+
       _isLoading = true;
       _error = null;
       _categoryResults = []; 
@@ -411,8 +416,7 @@ class ProductProvider with ChangeNotifier {
   Future<void> _fetchPage(int page) async {
     // Ensure corrections
     if (!_correctionsLoaded) {
-       _activeCorrections = await CorrectionService.fetchCorrections();
-       _correctionsLoaded = true;
+       await _loadCorrections();
     }
 
     final String requestedQuery = _currentQuery;
@@ -800,37 +804,59 @@ class ProductProvider with ChangeNotifier {
       notifyListeners();
   }
 
-  // --- Correction Logic ---
-  void _applyCorrectionsToResult(ComparisonResult res) {
-      if (_activeCorrections.isEmpty) return;
+  // --- Correction Logic (Full Implementation) ---
 
-      void apply(Product? p, String market) {
-         if (p == null || p.ean.isEmpty) return;
-         final key = "${p.ean}_$market"; // Key must match Supabase/Consensus logic
-         
-         if (_activeCorrections.containsKey(key)) {
-             final data = _activeCorrections[key];
-             // Apply Price
-             double? newPrice = (data['suggested_price'] as num?)?.toDouble();
-             String? newOffer = data['suggested_offer'] as String?;
-             
-             // Update the product (immutable copy)
-             Product newP = p.copyWith(
-                 price: newPrice,
-                 promoDescription: newOffer,
-             );
+  Future<void> _loadCorrections() async {
+      try {
+        final rawList = await ReportService.fetchCorrectionsRaw();
+        _activeCorrections.clear();
+        
+        for (var item in rawList) {
+           try {
+              final correction = Correction.fromJson(item);
+              if (correction.ean.isNotEmpty) {
+                 String key = '${correction.ean}|${correction.market}';
+                 if (!_activeCorrections.containsKey(key)) {
+                    _activeCorrections[key] = correction;
+                 }
+              }
+           } catch (e) {
+              print('Error parsing correction: $e');
+           }
+        }
+        _correctionsLoaded = true;
+        notifyListeners();
+      } catch (e) {
+        print('Error loading corrections: $e');
+      }
+  }
 
-             // Re-assign to ComparisonResult (mutable fields)
-             if (market == 'Monarca') res.monarcaParam = newP;
-             else if (market == 'Carrefour') res.carrefourParam = newP;
-             else if (market == 'La Coope') res.coopeParam = newP;
-             else if (market == 'Vea') res.veaParam = newP;
+  Correction? getCorrectionForProduct(Product p) {
+      if (p.ean.isEmpty) return null;
+      String key = '${p.ean}|${p.source}';
+      return _activeCorrections[key];
+  }
+
+  void acceptCorrectionPrice(Product p, double newPrice) {
+      if (p.ean.isNotEmpty) {
+         String key = '${p.ean}|${p.source}';
+         _acceptedPriceOverrides[key] = newPrice;
+         notifyListeners();
+      }
+  }
+  
+  double getDisplayPrice(Product p) {
+      if (p.ean.isNotEmpty) {
+         String key = '${p.ean}|${p.source}';
+         if (_acceptedPriceOverrides.containsKey(key)) {
+             return _acceptedPriceOverrides[key]!;
          }
       }
+      return p.price;
+  }
 
-      apply(res.monarcaProduct, 'Monarca');
-      apply(res.carrefourProduct, 'Carrefour');
-      apply(res.coopeProduct, 'La Coope');
-      apply(res.veaProduct, 'Vea');
+  void _applyCorrectionsToResult(ComparisonResult res) {
+      // Deprecated: UI now uses getDisplayPrice directly.
+      // Keeping method to satisfy any legacy calls if any.
   }
 }

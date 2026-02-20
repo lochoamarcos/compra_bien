@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 // import 'dart:io'; // Remove dart:io to support Web
 import 'dart:convert';
 import '../models/product.dart';
+import '../models/bank_promotion.dart';
 
 import 'package:flutter/foundation.dart'; // for kIsWeb
 
@@ -125,5 +126,31 @@ class MonarcaRepository {
           print('Monarca Detail Fetch Error: $e');
       }
       return null;
+  }
+
+  Future<List<BankPromotion>> getBankPromotions() async {
+      String endpoint = '$baseUrl/marketingPromotions/getValidPromotions';
+      if (kIsWeb) {
+        endpoint = '$corsProxy${Uri.encodeComponent(endpoint)}';
+      }
+      final url = Uri.parse(endpoint);
+      final client = http.Client();
+
+      try {
+           final response = await client.get(url, headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+              'Accept': 'application/json',
+           });
+
+           if (response.statusCode == 200) {
+               final List<dynamic> data = json.decode(utf8.decode(response.bodyBytes));
+               return data.map((json) => BankPromotion.fromJson(json, 'Monarca')).toList();
+           }
+      } catch (e) {
+          print('Monarca Bank Promo Error: $e');
+      } finally {
+          client.close();
+      }
+      return [];
   }
 }

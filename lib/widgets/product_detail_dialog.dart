@@ -594,25 +594,25 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
               ),
               const Divider(),
               // Detailed Correction (Single)
-              Row(
+              Column(
                  mainAxisAlignment: MainAxisAlignment.center,
                  children: [
                     const Text('¿Querés corregir un dato específico?', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                    TextButton(
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                        icon: const Icon(Icons.edit, size: 14),
+                        label: Text('Sugerir Edición ($_selectedMarketName)', style: const TextStyle(fontSize: 12)),
                         onPressed: () {
                            setState(() {
-                              _showCorrectionForm = true;
-                              _correctionPriceController.text = selectedProd.price.toStringAsFixed(0);
-                              _correctionOfferController.text = _getSpecialOfferText(selectedProd.promoDescription);
+                               _showCorrectionForm = true;
+                               _correctionPriceController.text = selectedProd.price.toStringAsFixed(0);
+                               _correctionOfferController.text = _getSpecialOfferText(selectedProd.promoDescription);
                            });
                         },
-                        child: Column(
-                           crossAxisAlignment: CrossAxisAlignment.end,
-                           children: [
-                              const Text('Sugerir Edición', style: TextStyle(fontSize: 12)),
-                              Text('($_selectedMarketName)', style: const TextStyle(fontSize: 10, color: Colors.grey)),
-                           ]
-                        )
+                        style: OutlinedButton.styleFrom(
+                           minimumSize: const Size(0, 36),
+                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8)
+                        ),
                     )
                  ],
               )
@@ -631,18 +631,61 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
      final double? suggestedPrice = double.tryParse(_correctionPriceController.text);
      final String suggestedOffer = _correctionOfferController.text;
 
-     // Anti-Spam / Submit
+     String? uploadedUrl;
+     
+     // 1. Show Loading UI
+     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Procesando reporte...')));
+
+     // 2. Handle Image Upload & NSFW Check
+     if (_correctionImage != null) {
+        final fileName = 'corr_${widget.result.ean}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+        uploadedUrl = await CorrectionService.uploadImage(File(_correctionImage!.path), fileName);
+        
+        if (uploadedUrl != null) {
+           // NSFW CHECK
+           ScaffoldMessenger.of(context).hideCurrentSnackBar();
+           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Verificando imagen...')));
+           
+           final nsfwResult = await CorrectionService.checkNsfw(uploadedUrl);
+           final bool isSafe = nsfwResult['isSafe'] ?? true;
+           final String status = nsfwResult['status'] ?? 'unknown';
+
+           if (!isSafe) {
+              if (mounted) {
+                 ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                 showDialog(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                       title: const Text('Imagen Inapropiada'),
+                       content: const Text('Nuestro sistema detectó que la imagen podría ser inapropiada. Por favor, subí una foto clara del producto/precio.'),
+                       actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Entendido'))],
+                    )
+                 );
+                 setState(() => _correctionImage = null);
+              }
+              return; // BLOCKED
+           }
+
+           if (status == 'timeout_pending_review' && mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Imagen en revisión, el reporte se procesará igual.')));
+           }
+        }
+     }
+
+     // 3. Final Submit
      bool success = await CorrectionService.submitReport(
-        ean: product.ean.isNotEmpty ? product.ean : 'NO-EAN', // Handle products without EAN (shouldn't happen in correlation, but safe)
+        ean: product.ean.isNotEmpty ? product.ean : 'NO-EAN',
         market: _selectedMarketName,
         suggestedPrice: suggestedPrice,
         suggestedOffer: suggestedOffer.isNotEmpty ? suggestedOffer : null,
         originalName: product.name,
+        imageUrl: uploadedUrl, // PASS THE URL
      );
 
      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         if (success) {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('¡Gracias! Tu reporte ayuda a la comunidad. (Consenso: 1/5)')));
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('¡Gracias! Tu reporte fue subido con éxito.')));
             setState(() { _showCorrectionForm = false; _correctionImage = null; });
         } else {
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Por favor esperá unos minutos antes de enviar otro reporte.')));

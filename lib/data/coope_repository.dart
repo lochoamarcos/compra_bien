@@ -19,10 +19,16 @@ class CoopeRepository {
       print('[La Coope] Query normalizado: "$normalizedQuery"');
       
       http.Response response;
+
+      // Public CORS proxy for Web
+      const String corsProxy = 'https://corsproxy.io/?';
       
       if (categoryId != null) {
-          final categoryEndpoint = 'https://api.lacoopeencasa.coop/api/articulos/pagina';
-          final categoryUrl = Uri.parse(categoryEndpoint);
+          String endpoint = 'https://api.lacoopeencasa.coop/api/articulos/pagina';
+          if (kIsWeb) {
+             endpoint = '$corsProxy${Uri.encodeComponent(endpoint)}';
+          }
+          final categoryUrl = Uri.parse(endpoint);
           
           final payload = {
             "id_busqueda": categoryId,
@@ -149,8 +155,12 @@ class CoopeRepository {
     int page, 
     bool isPromo
   ) async {
-    final searchEndpoint = 'https://api.lacoopeencasa.coop/api/articulos/pagina_busqueda';
-    final searchUrl = Uri.parse(searchEndpoint);
+    const String corsProxy = 'https://corsproxy.io/?';
+    String endpoint = 'https://api.lacoopeencasa.coop/api/articulos/pagina_busqueda';
+    if (kIsWeb) {
+       endpoint = '$corsProxy${Uri.encodeComponent(endpoint)}';
+    }
+    final searchUrl = Uri.parse(endpoint);
     
     // 1. Intentar búsqueda principal
     var payload = _buildSearchPayload(normalizedQuery, page, isPromo);

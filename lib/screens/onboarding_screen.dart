@@ -87,22 +87,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           ),
           
           // Theme Toggle (Top Left)
-          Positioned(
-            top: 50,
-            left: 20,
-            child: Consumer<ThemeProvider>(
-              builder: (context, theme, child) {
-                return IconButton(
-                  icon: Icon(
-                    isDark ? Icons.wb_sunny : Icons.nightlight_round,
-                    size: 30,
-                    color: isDark ? Colors.yellow : Colors.blueGrey,
-                  ),
-                  onPressed: () => theme.toggleTheme(!isDark),
-                );
-              },
-            ),
-          ),
+          // Theme Toggle Removed
 
           // Skip Button (Top Right)
           Positioned(

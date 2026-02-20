@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -103,7 +104,8 @@ class ReportService {
                     'ota_logs': otaLogs ?? '', 
                     'timestamp': DateTime.now().toIso8601String()
                 },
-                'status': 'open'
+                'status': 'open',
+                'project_id': 'comprabien', // NEW: Multi-tenancy
             });
 
             return true; // Success
@@ -216,5 +218,90 @@ class ReportService {
     } catch (_) {}
 
     return sb.toString();
+  }
+
+  static Future<List<Map<String, dynamic>>> fetchCorrectionsRaw() async {
+      try {
+         final response = await Supabase.instance.client
+            .from('reports') // Table defined in CorrectionService
+            .select()
+            .eq('project_id', 'comprabien')
+            .order('created_at', ascending: false)
+            .limit(50);
+         return List<Map<String, dynamic>>.from(response);
+      } catch (e) {
+         debugPrint('Error fetching raw corrections: $e');
+         return [];
+      }
+  }
+
+  static Future<List<Map<String, dynamic>>> fetchReports() async {
+      try {
+        // 1. Fetch General Feedback
+        final feedbackResponse = await Supabase.instance.client
+            .from('feedback')
+            .select()
+            .eq('project_id', 'comprabien') // NEW: Multi-tenancy
+            .order('timestamp', ascending: false)
+            .limit(25);
+
+        // 2. Fetch Product Corrections
+        final correctionsResponse = await Supabase.instance.client
+            .from('reports') // Table defined in CorrectionService
+            .select()
+            .eq('project_id', 'comprabien') // NEW: Multi-tenancy
+            .order('created_at', ascending: false)
+            .limit(25);
+
+        List<Map<String, dynamic>> combined = [];
+
+        // Map Feedback
+        for (var item in feedbackResponse) {
+           combined.add({
+             'type': 'feedback',
+             'category': item['category'] ?? 'General',
+             'message': item['message'] ?? '',
+             'user': (item['metadata'] is Map ? item['metadata']['username'] : null) ?? 'Anónimo',
+             'id': item['id'].toString(),
+             'timestamp': item['timestamp'],
+             'details': item['metadata'],
+           });
+        }
+
+        // Map Corrections
+        for (var item in correctionsResponse) {
+           final market = item['market'] ?? 'Unknown';
+           final ean = item['ean'] ?? 'Unknown';
+           final price = item['suggested_price'];
+           final offer = item['suggested_offer'];
+           
+           String msg = "Corrección de Producto ($ean) en $market.";
+           if (price != null) msg += " Precio: \$$price.";
+           if (offer != null) msg += " Oferta: $offer.";
+
+           combined.add({
+             'type': 'correction',
+             'category': 'Corrección de Precio/Prod',
+             'message': msg,
+             'user': 'Community User', // Corrections typically don't store username in metadata like feedback
+             'id': item['id'].toString(),
+             'timestamp': item['created_at'], // Supabase default timestamp col
+             'details': item,
+           });
+        }
+
+        // Sort by timestamp descending
+        combined.sort((a, b) {
+           DateTime tA = DateTime.tryParse(a['timestamp'].toString()) ?? DateTime(1900);
+           DateTime tB = DateTime.tryParse(b['timestamp'].toString()) ?? DateTime(1900);
+           return tB.compareTo(tA);
+        });
+
+        return combined;
+
+      } catch (e) {
+        debugPrint('Error fetching reports: $e');
+        return [];
+      }
   }
 }

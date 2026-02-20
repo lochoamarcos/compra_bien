@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-enum ThemeType { classic, premium }
+enum ThemeType { classic }
 
 class ThemeProvider with ChangeNotifier {
   ThemeMode _themeMode = ThemeMode.light;
@@ -20,8 +20,9 @@ class ThemeProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  // setThemeType simplified as there's only one type now
   void setThemeType(ThemeType type) {
-    _themeType = type;
+    _themeType = ThemeType.classic;
     _saveToPrefs();
     notifyListeners();
   }
@@ -30,7 +31,6 @@ class ThemeProvider with ChangeNotifier {
   double get fontScale => _fontScale;
 
   void cycleFontScale() {
-    // Legacy cycle method
     if (_fontScale == 1.0) {
       _fontScale = 1.15;
     } else if (_fontScale == 1.15) {
@@ -51,11 +51,10 @@ class ThemeProvider with ChangeNotifier {
   Future<void> _loadFromPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     final modeIndex = prefs.getInt('theme_mode') ?? ThemeMode.light.index;
-    final typeIndex = prefs.getInt('theme_type') ?? 0;
     final scale = prefs.getDouble('font_scale') ?? 1.0;
     
     _themeMode = ThemeMode.values[modeIndex];
-    _themeType = ThemeType.values[typeIndex];
+    _themeType = ThemeType.classic; // Default to classic
     _fontScale = scale;
     notifyListeners();
   }

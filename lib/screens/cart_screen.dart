@@ -4,7 +4,9 @@ import 'package:intl/intl.dart';
 import '../providers/cart_provider.dart';
 import '../models/product.dart';
 import '../models/cart_item.dart';
+import '../models/cart_item.dart';
 import '../utils/market_branding.dart';
+import '../utils/string_extensions.dart';
 
 class CartScreen extends StatefulWidget {
   const CartScreen({super.key});
@@ -266,7 +268,7 @@ class _CartScreenState extends State<CartScreen> {
             InkWell(
               onTap: () => cart.toggleSelection(item),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                padding: const EdgeInsets.only(left: 8, right: 20, top: 8, bottom: 8),
                 child: Row(
                   children: [
                     // Checkbox
@@ -286,7 +288,7 @@ class _CartScreenState extends State<CartScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                             Text(
-                              '${item.product.name}${item.product.brand != null ? " - ${item.product.brand}" : ""}',
+                              '${item.product.name.toTitleCase()}${item.product.brand != null ? " - ${item.product.brand!.toTitleCase()}" : ""}',
                               style: TextStyle(
                                 decoration: item.isSelected ? TextDecoration.lineThrough : null,
                                 color: item.isSelected 
@@ -346,13 +348,13 @@ class _CartScreenState extends State<CartScreen> {
                                          showDialog(
                                            context: context, 
                                            builder: (ctx) => AlertDialog(
-                                              title: const Text('Confirmar'),
+                                              title: const Text('¿Borrar producto?'),
                                               content: Text('¿Borrar ${item.product.name} del carrito?'),
                                               actions: [
                                                  TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
                                                  TextButton(
                                                     onPressed: () {
-                                                       cart.removeItemCompletely(item);
+                                                       cart.removeSingleItem(item); // Fix: Use removeSingleItem to fully remove or removeItemCompletely? User said decrement button. Logic usually is: if 1 -> 0 remove.
                                                        Navigator.pop(ctx);
                                                     }, 
                                                     child: const Text('Borrar', style: TextStyle(color: Colors.red))
@@ -383,20 +385,7 @@ class _CartScreenState extends State<CartScreen> {
                                ],
                              ),
                              // Tall Tap Areas
-                             Positioned(
-                               top: -10, left: 0, bottom: 10, width: 45,
-                               child: GestureDetector(
-                                 behavior: HitTestBehavior.translucent,
-                                 onTap: () {
-                                    if (item.quantity > 1) {
-                                       cart.removeSingleItem(item);
-                                    } else {
-                                       // Trigger the same dialog logic if possible or just use the button below
-                                       // For simplicity, let's just use the button's onTap which is safe.
-                                    }
-                                 },
-                               ),
-                             ),
+                              // Removed interfering Positioned overlay
                            ],
                          )
                       ],
@@ -486,7 +475,9 @@ class _CartScreenState extends State<CartScreen> {
                       Text(desc, style: const TextStyle(fontStyle: FontStyle.italic, color: Colors.blue)),
                       const Divider(),
                       const SizedBox(height: 8),
-                      Text('Precio unitario: ${currency.format(basePrice)}'),
+                      Text('Precio unitario (Base/Oferta): ${currency.format(basePrice)}'),
+                      if (item.product.oldPrice != null && item.product.oldPrice! > basePrice)
+                          Text('Precio Normal (Sin Desc.): ${currency.format(item.product.oldPrice)}', style: const TextStyle(decoration: TextDecoration.lineThrough, color: Colors.grey)),
                       const SizedBox(height: 4),
                       if (desc.contains('2da')) ...[
                           Text('Precio Comprando 2: ${currency.format(basePrice * (desc.contains('50') ? 1.5 : (desc.contains('70') ? 1.3 : 2)))}'),

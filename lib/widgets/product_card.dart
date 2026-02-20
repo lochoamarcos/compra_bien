@@ -10,6 +10,7 @@ import '../providers/cart_provider.dart';
 import '../providers/product_provider.dart';
 import '../providers/report_provider.dart';
 import 'loading_dots.dart';
+import '../utils/string_extensions.dart';
 
 class ProductCard extends StatefulWidget {
   final ComparisonResult result;
@@ -109,9 +110,9 @@ class _ProductCardState extends State<ProductCard> {
     String title = widget.result.name;
     String subtitle = '';
 
-    String brand = _toTitleCase(displayProduct.brand ?? '');
-    String name = _toTitleCase(widget.result.name);
-    if (name == 'Unknown' || name.isEmpty) name = _toTitleCase(displayProduct.name);
+    String brand = (displayProduct.brand ?? '').toTitleCase();
+    String name = widget.result.name.toTitleCase();
+    if (name == 'Unknown' || name.isEmpty) name = displayProduct.name.toTitleCase();
     
     if (brand.isNotEmpty) {
         title = brand;
@@ -248,6 +249,22 @@ class _ProductCardState extends State<ProductCard> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
+                           // Correction Check
+                           Consumer<ProductProvider>(
+                               builder: (context, provider, child) {
+                                   final correction = provider.getCorrectionForProduct(displayProduct);
+                                   if (correction != null) {
+                                      return Padding(
+                                        padding: const EdgeInsets.only(right: 8.0),
+                                        child: InkWell(
+                                          onTap: () => _showCorrectionDialog(context, correction, provider),
+                                          child: const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 24),
+                                        ),
+                                      );
+                                   }
+                                   return const SizedBox.shrink();
+                               }
+                           ),
                            // TODO: Savings Badge logic adjusted for selection?
                            // Currently keeping simple: If selected != best, maybe show "Perdida"?
                            // Or just keep the general "Ahorra" if selected is best.
@@ -273,58 +290,41 @@ class _ProductCardState extends State<ProductCard> {
 
                                if (isInCart) {
                                   return Container(
-                                    height: 30,
+                                    // Removed height: 30
                                     decoration: BoxDecoration(
                                       color: (selectedProductMap['style'] as MarketStyle).primaryColor.withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(20),
+                                      borderRadius: BorderRadius.circular(24),
                                       border: Border.all(color: (selectedProductMap['style'] as MarketStyle).primaryColor)
                                     ),
-                                    child: Stack(
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            InkWell(
-                                              onTap: () {
-                                                 if (quantity > 1) {
-                                                    cart.removeSingleItem(cart.items[cartItemIndex]);
-                                                 } else {
-                                                    cart.removeSingleItem(cart.items[cartItemIndex]); 
-                                                 }
-                                              },
-                                              borderRadius: const BorderRadius.horizontal(left: Radius.circular(20)),
-                                              child: Container(
-                                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12), // Increased vertical padding
-                                                child: Icon(Icons.remove, size: 20, color: (selectedProductMap['style'] as MarketStyle).primaryColor),
-                                              ),
-                                            ),
-                                            Text('$quantity', style: TextStyle(fontWeight: FontWeight.bold, color: (selectedProductMap['style'] as MarketStyle).primaryColor)),
-                                            InkWell(
-                                              onTap: () => cart.addItem(productToAdd, bestMarket: bestMarketName, bestPrice: bestProduct.price),
-                                              borderRadius: const BorderRadius.horizontal(right: Radius.circular(20)),
-                                              child: Container(
-                                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12), // Increased vertical padding
-                                                child: Icon(Icons.add, size: 20, color: (selectedProductMap['style'] as MarketStyle).primaryColor),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        // Invisible tall tap areas for "more up" hitbox
-                                        Positioned(
-                                          top: -20, left: 0, bottom: 20, width: 40,
-                                          child: GestureDetector(
-                                            behavior: HitTestBehavior.translucent,
-                                            onTap: () {
-                                               if (quantity > 1) cart.removeSingleItem(cart.items[cartItemIndex]);
-                                               else cart.removeSingleItem(cart.items[cartItemIndex]);
-                                            },
+                                        InkWell(
+                                          onTap: () {
+                                             if (quantity > 1) {
+                                                cart.removeSingleItem(cart.items[cartItemIndex]);
+                                             } else {
+                                                cart.removeSingleItem(cart.items[cartItemIndex]); 
+                                             }
+                                          },
+                                          borderRadius: const BorderRadius.horizontal(left: Radius.circular(24)),
+                                          child: SizedBox(
+                                            width: 48, 
+                                            height: 40,
+                                            child: Icon(Icons.remove, size: 24, color: (selectedProductMap['style'] as MarketStyle).primaryColor),
                                           ),
                                         ),
-                                        Positioned(
-                                          top: -20, right: 0, bottom: 20, width: 40,
-                                          child: GestureDetector(
-                                            behavior: HitTestBehavior.translucent,
-                                            onTap: () => cart.addItem(productToAdd, bestMarket: bestMarketName, bestPrice: bestProduct.price),
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                                          child: Text('$quantity', style: TextStyle(fontWeight: FontWeight.bold, color: (selectedProductMap['style'] as MarketStyle).primaryColor)),
+                                        ),
+                                        InkWell(
+                                          onTap: () => cart.addItem(productToAdd, bestMarket: bestMarketName, bestPrice: bestProduct.price),
+                                          borderRadius: const BorderRadius.horizontal(right: Radius.circular(24)),
+                                          child: SizedBox(
+                                            width: 48, 
+                                            height: 40,
+                                            child: Icon(Icons.add, size: 24, color: (selectedProductMap['style'] as MarketStyle).primaryColor),
                                           ),
                                         ),
                                       ],
@@ -381,9 +381,26 @@ class _ProductCardState extends State<ProductCard> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.end,
                             children: [
-                               if (_selectedMarketName == bestMarketName && availableProducts.length > 1)
-                                  _buildSavingsBadge((sortedProducts.last['price'] as double) - (bestOption['price'] as double)),
-                               const SizedBox(width: 8),
+                                // Correction Check Horizontal
+                                Consumer<ProductProvider>(
+                                   builder: (context, provider, child) {
+                                       final correction = provider.getCorrectionForProduct(displayProduct);
+                                       if (correction != null) {
+                                          return Padding(
+                                            padding: const EdgeInsets.only(right: 8.0),
+                                            child: InkWell(
+                                              onTap: () => _showCorrectionDialog(context, correction, provider),
+                                              child: const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 20),
+                                            ),
+                                          );
+                                       }
+                                       return const SizedBox.shrink();
+                                   }
+                                ),
+
+                                if (_selectedMarketName == bestMarketName && availableProducts.length > 1)
+                                   _buildSavingsBadge((sortedProducts.last['price'] as double) - (bestOption['price'] as double)),
+                                const SizedBox(width: 8),
                                Consumer<CartProvider>(
                                  builder: (context, cart, child) {
                                    final productToAdd = selectedProductMap['prod'] as Product;
@@ -399,34 +416,47 @@ class _ProductCardState extends State<ProductCard> {
                                    final quantity = isInCart ? cart.items[cartItemIndex].quantity : 0;
 
                                    if (isInCart) {
-                                      return Container(
-                                        decoration: BoxDecoration(
-                                          color: (selectedProductMap['style'] as MarketStyle).primaryColor.withOpacity(0.1),
-                                          borderRadius: BorderRadius.circular(20),
-                                          border: Border.all(color: (selectedProductMap['style'] as MarketStyle).primaryColor)
-                                        ),
-                                        child: Row(
-                                          children: [
-                                            InkWell(
-                                              onTap: () => cart.removeSingleItem(cart.items[cartItemIndex]),
-                                              borderRadius: const BorderRadius.horizontal(left: Radius.circular(20)),
-                                              child: Container(
-                                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                                child: Icon(Icons.remove, color: (selectedProductMap['style'] as MarketStyle).primaryColor),
-                                              ),
+                                    return Container(
+                                      // Removed fixed height: 30 to allow touch targets to size the container
+                                      decoration: BoxDecoration(
+                                        color: (selectedProductMap['style'] as MarketStyle).primaryColor.withOpacity(0.15), // Elegant opacity
+                                        borderRadius: BorderRadius.circular(24), // Increased radius for taller pill
+                                        border: Border.all(color: (selectedProductMap['style'] as MarketStyle).primaryColor.withOpacity(0.5))
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          InkWell(
+                                            onTap: () {
+                                               if (quantity > 1) {
+                                                  cart.removeSingleItem(cart.items[cartItemIndex]);
+                                               } else {
+                                                  cart.removeSingleItem(cart.items[cartItemIndex]); 
+                                               }
+                                            },
+                                            borderRadius: const BorderRadius.horizontal(left: Radius.circular(24)),
+                                            child: SizedBox(
+                                              width: 48, 
+                                              height: 40,
+                                              child: Icon(Icons.remove, size: 24, color: (selectedProductMap['style'] as MarketStyle).primaryColor),
                                             ),
-                                            Text('$quantity', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: (selectedProductMap['style'] as MarketStyle).primaryColor)),
-                                            InkWell(
-                                              onTap: () => cart.addItem(productToAdd, bestMarket: bestMarketName, bestPrice: bestProduct.price),
-                                              borderRadius: const BorderRadius.horizontal(right: Radius.circular(20)),
-                                              child: Container(
-                                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                                child: Icon(Icons.add, color: (selectedProductMap['style'] as MarketStyle).primaryColor),
-                                              ),
+                                          ),
+                                          Padding(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                                            child: Text('$quantity', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: (selectedProductMap['style'] as MarketStyle).primaryColor)),
+                                          ),
+                                          InkWell(
+                                            onTap: () => cart.addItem(productToAdd, bestMarket: bestMarketName, bestPrice: bestProduct.price),
+                                            borderRadius: const BorderRadius.horizontal(right: Radius.circular(24)),
+                                            child: SizedBox(
+                                              width: 48, 
+                                              height: 40,
+                                              child: Icon(Icons.add, size: 24, color: (selectedProductMap['style'] as MarketStyle).primaryColor),
                                             ),
-                                          ],
-                                        ),
-                                      );
+                                          ),
+                                        ],
+                                      ),
+                                    );
                                    }
 
                                    return ElevatedButton.icon(
@@ -434,9 +464,11 @@ class _ProductCardState extends State<ProductCard> {
                                      icon: const Icon(Icons.add_shopping_cart, size: 18),
                                      label: const Text('Agregar'),
                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: (selectedProductMap['style'] as MarketStyle).primaryColor,
+                                        backgroundColor: (selectedProductMap['style'] as MarketStyle).primaryColor.withOpacity(0.9), // Elegant
                                         foregroundColor: Colors.white,
+                                        elevation: 0, // Flat elegant
                                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                                      ),
                                    );
                                  }
@@ -455,15 +487,39 @@ class _ProductCardState extends State<ProductCard> {
    Widget _buildSelectableTag(MarketStyle style, Product product, String bestMarketName) {
      final isSelected = style.name == _selectedMarketName;
      final isBest = style.name == bestMarketName;
+     final isDark = Theme.of(context).brightness == Brightness.dark;
      
-     // Styles
-     Color baseColor = Theme.of(context).brightness == Brightness.dark ? Colors.white10 : Colors.grey[200]!;
-     if (isBest) baseColor = Colors.green.withOpacity(0.1);
-     if (isSelected && !isBest) baseColor = style.primaryColor.withOpacity(0.1); 
+     // Elegant Styles
+     Color baseBg = isDark ? Colors.white.withOpacity(0.05) : Colors.grey[100]!;
      
-     Border border = Border.all(color: Colors.transparent, width: 2); 
-     if (isSelected) border = Border.all(color: style.primaryColor, width: 2);
-     else if (isBest) border = Border.all(color: Colors.green.withOpacity(0.5), width: 2);
+     if (isSelected) {
+        baseBg = style.primaryColor.withOpacity(0.15); // Subtle selection
+     } else if (isBest) {
+        baseBg = Colors.green.withOpacity(0.1); // Subtle best
+     }
+     
+     Border? border;
+     if (isSelected) border = Border.all(color: style.primaryColor.withOpacity(0.6), width: 1.5);
+     else if (isBest) border = Border.all(color: Colors.green.withOpacity(0.5), width: 1.5);
+     else border = Border.all(color: Colors.transparent, width: 1.5);
+
+     // Text Colors - CRITICAL: In Dark Mode, user wants WHITE text even if best/selected
+     Color nameColor = isDark ? Colors.white70 : Colors.black87;
+     Color priceColor = isDark ? Colors.white : Colors.black;
+
+     if (isSelected && !isDark) {
+         nameColor = style.primaryColor;
+         priceColor = style.primaryColor;
+     } else if (isSelected && isDark) {
+         // In dark mode selected: keep white text, maybe colored icon/indicator if we had one
+         nameColor = HSLColor.fromColor(style.primaryColor).withLightness(0.8).toColor(); // Lighter version of primary
+         priceColor = Colors.white;
+     }
+     
+     // Best overrides
+     if (isBest && !isSelected) {
+         priceColor = isDark ? Colors.greenAccent[100]! : Colors.green[800]!;
+     }
 
      return InkWell(
         onTap: () {
@@ -471,27 +527,28 @@ class _ProductCardState extends State<ProductCard> {
               _selectedMarketName = style.name;
            });
         },
-        child: Container(
-           padding: const EdgeInsets.all(4),
-           constraints: const BoxConstraints(minHeight: 45), // Ensure consistent height
+        child: AnimatedContainer(
+           duration: const Duration(milliseconds: 200),
+           padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+           constraints: const BoxConstraints(minHeight: 50),
            decoration: BoxDecoration(
-              color: baseColor,
-              borderRadius: BorderRadius.circular(4),
+              color: baseBg,
+              borderRadius: BorderRadius.circular(8),
               border: border
            ),
            child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                  Text(style.name, style: TextStyle(
-                    fontSize: 10,fontWeight: FontWeight.bold,
-                    color: isSelected ? style.primaryColor : (Theme.of(context).brightness == Brightness.dark ? Colors.white70 : Colors.black87)
+                    fontSize: 10, fontWeight: FontWeight.bold,
+                    color: nameColor
                  )),
                  Text(
                    NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 0).format(product.price),
                    style: TextStyle(
                       fontWeight: FontWeight.bold, 
-                      fontSize: 12,
-                      color: isSelected ? style.primaryColor : Colors.black87
+                      fontSize: 13,
+                      color: priceColor
                    ),
                  )
               ]
@@ -605,6 +662,80 @@ class _ProductCardState extends State<ProductCard> {
       );
   }
 
+  // --- Correction Dialog ---
+  
+  void _showCorrectionDialog(BuildContext context, dynamic correction, ProductProvider provider) {
+      showDialog(
+         context: context,
+         builder: (ctx) => AlertDialog(
+            title: Row(
+              children: [
+                const Icon(Icons.warning_amber_rounded, color: Colors.orange),
+                const SizedBox(width: 8),
+                const Text('Reporte Comunidad', style: TextStyle(fontSize: 16))
+              ],
+            ),
+            content: Column(
+               mainAxisSize: MainAxisSize.min,
+               crossAxisAlignment: CrossAxisAlignment.start,
+               children: [
+                   if (correction.user != null)
+                      Text('Usuario: ${correction.user}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.grey)),
+                   const SizedBox(height: 8),
+                   Text(correction.message ?? 'Sin comentario adicional.'),
+                   if (correction.imageUrl != null) ...[
+                      const SizedBox(height: 8),
+                      // Ideally use cached network image
+                      Image.network(
+                        correction.imageUrl!, 
+                        height: 100, 
+                        width: double.infinity, 
+                        fit: BoxFit.cover,
+                        errorBuilder: (_,__,___) => const SizedBox.shrink()
+                      ),
+                   ],
+                   const SizedBox(height: 12),
+                   if (correction.suggestedPrice != null) ...[
+                      const Text('Precio Sugerido:', style: TextStyle(fontWeight: FontWeight.bold)),
+                      Text('\$${correction.suggestedPrice}', style: const TextStyle(fontSize: 18, color: Colors.green, fontWeight: FontWeight.bold)),
+                   ]
+               ],
+            ),
+            actions: [
+               TextButton(
+                 onPressed: () => Navigator.pop(ctx), 
+                 child: const Text('Cerrar')
+               ),
+               if (correction.suggestedPrice != null)
+                   FilledButton.icon(
+                      onPressed: () {
+                         Product? targetProduct;
+                         if (_selectedMarketName == 'Monarca') targetProduct = widget.result.monarcaParam;
+                         else if (_selectedMarketName == 'Carrefour') targetProduct = widget.result.carrefourParam;
+                         else if (_selectedMarketName == 'La Coope') targetProduct = widget.result.coopeParam;
+                         else if (_selectedMarketName == 'Vea') targetProduct = widget.result.veaParam;
+                         
+                         if (targetProduct != null) {
+                             provider.acceptCorrectionPrice(targetProduct, correction.suggestedPrice!);
+                             Navigator.pop(ctx);
+                             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                               content: Text('Precio actualizado por esta sesión.'), 
+                               backgroundColor: Colors.orange,
+                               duration: Duration(seconds: 2),
+                             ));
+                         } else {
+                             Navigator.pop(ctx);
+                         }
+                      }, 
+                      icon: const Icon(Icons.check),
+                      label: const Text('Le creo'),
+                      style: FilledButton.styleFrom(backgroundColor: Colors.orange),
+                   )
+            ],
+         )
+      );
+  }
+
   void _showProductDetail(BuildContext context, String title, String subtitle, String? imageUrl, List<Map<String, Object>> products, String? selectedMarketName) {
        showDialog(
         context: context,
@@ -619,13 +750,5 @@ class _ProductCardState extends State<ProductCard> {
       );
   }
 
-  // Internal helper for title case, reused if needed locally (though ProductDetailDialog has its own now if needed)
-  String _toTitleCase(String text) {
-      if (text.isEmpty) return text;
-      return text.toLowerCase().split(' ').map((word) {
-        if (word.isEmpty) return '';
-        if (word.length == 1) return word.toUpperCase();
-        return word[0].toUpperCase() + word.substring(1);
-      }).join(' ');
-  }
+  // Internal helper removed, using string_extensions.dart
 }

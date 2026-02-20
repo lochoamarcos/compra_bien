@@ -19,7 +19,12 @@ class CartItem {
   });
 
   double get totalPrice {
-    double basePrice = product.price;
+    // If we have a promo description (volume discount), use oldPrice as base if it exists
+    // consistently to avoid "double discounting" if 'product.price' is already an average.
+    double basePrice = (product.promoDescription != null && product.oldPrice != null && product.oldPrice! > product.price) 
+        ? product.oldPrice! 
+        : product.price;
+
     if (product.promoDescription != null) {
       final desc = product.promoDescription!.toLowerCase();
       // 2da unidad 50%

@@ -11,25 +11,15 @@ import 'screens/onboarding_screen.dart';
 import 'services/analytics_service.dart';
 
 import 'services/correction_service.dart';
+import 'utils/app_config.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
   // Initialize Supabase
   await CorrectionService.initialize(
-    url: 'https://wqxghiwfudhzdiyyyick.supabase.co',
-    anonKey: const String.fromEnvironment('SUPABASE_APIKEY', defaultValue: ''), 
-    // Ideally this comes from build --dart-define or .env, but user said they have it in .env
-    // Since I can't read .env easily here without flutter_dotenv, and user GAVE me the key implicitly via "SUPABASE_APIKEY in .env" 
-    // I should check if I should hardcode or use fromEnvironment. 
-    // User said "tengo la pass... y tambien SUPABASE_APIKEY ... configurations todo para eso".
-    // I will use String.fromEnvironment and assume user runs with --dart-define OR I'll hardcode if user didn't give the literal key string in chat.
-    // Wait, user provided URL but NOT the key string in the chat message ("...y este Publishable API Key" but didn't paste it? Or did they?)
-    // Re-reading user message: "...este Publishable API Key, tengo la pass...". 
-    // It seems they might have forgotten to paste the key or implying I should read it from env.
-    // I will use `const String.fromEnvironment` so it's safe and ask user to provide it if missing or I'll look for .env file?
-    // User said "tengo ... en el .env". Flutter doesn't read .env automatically without a package.
-    // I will use a placeholder and ASK user or check if I can read .env file.
+    url: AppConfig.supabaseUrl,
+    anonKey: AppConfig.supabaseAnonKey,
   );
 
   await AnalyticsService().init(); // Initialize Analytics
@@ -116,30 +106,27 @@ class _CompraBienAppState extends State<CompraBienApp> with WidgetsBindingObserv
 
   ThemeData _getThemeData(ThemeType type, Brightness brightness) {
     bool isDark = brightness == Brightness.dark;
-    
-    // Base Colors (Classic)
-    Color primary = Colors.blue;
-    Color scaffoldBg = isDark ? const Color(0xFF121212) : Colors.white;
-    Color cardColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
 
-    // Premium Theme Overrides
-    if (type == ThemeType.premium) {
-      primary = Colors.amber;
-      if (isDark) {
-        scaffoldBg = const Color(0xFF000000); // Deep Black
-        cardColor = const Color(0xFF101010);
-      }
-    }
+    // --- Classic (Turquoise/Celeste) ---
+    Color primary = const Color(0xFF00ACC1); // Elegant Turquoise
+    Color scaffoldBg = isDark ? const Color(0xFF121212) : const Color(0xFFF5F7FA);
+    Color cardColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
 
     return ThemeData(
       useMaterial3: true,
       brightness: brightness,
+      // primaryColor removed as colorSchemeSeed handles it
       colorSchemeSeed: primary,
       scaffoldBackgroundColor: scaffoldBg,
       cardColor: cardColor,
       appBarTheme: AppBarTheme(
         backgroundColor: isDark ? const Color(0xFF1E1E1E) : primary,
         foregroundColor: Colors.white,
+      ),
+      cardTheme: CardThemeData(
+        elevation: isDark ? 0 : 2,
+        color: cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
     );
   }

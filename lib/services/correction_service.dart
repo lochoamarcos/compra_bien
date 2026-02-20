@@ -2,6 +2,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'dart:io';
+import 'dart:async'; // Added for TimeoutException
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import '../utils/app_config.dart';
 
 class CorrectionService {
   static const String _reportsTable = 'reports';
@@ -19,7 +23,8 @@ class CorrectionService {
     try {
       final response = await Supabase.instance.client
           .from(_correctionsView)
-          .select();
+          .select()
+          .eq('project_id', 'comprabien'); // NEW: Multi-tenancy
 
       final corrections = <String, dynamic>{};
       
@@ -44,6 +49,7 @@ class CorrectionService {
     double? suggestedPrice,
     String? suggestedOffer,
     String? originalName, // Just for metadata
+    String? imageUrl, // NEW: Link to the uploaded image
   }) async {
     final prefs = await SharedPreferences.getInstance();
     
@@ -68,12 +74,14 @@ class CorrectionService {
         'market': market,
         'suggested_price': suggestedPrice,
         'suggested_offer': suggestedOffer,
+        'image_url': imageUrl, // NEW: Store in DB
         'user_id': userId,
         'metadata': {
             'device': deviceInfo,
             'original_name': originalName ?? 'unknown',
             'platform': Platform.isAndroid ? 'android' : 'ios',
-        }
+        },
+        'project_id': 'comprabien', // NEW: Multi-tenancy
       });
 
       // Update timestamp on success
@@ -129,6 +137,60 @@ class CorrectionService {
         print('Error uploading image to Supabase: $e');
         return null;
      }
+  }
+
+  /// Checks image safety via Vercel Backend (NSFWJS)
+  /// Returns a map with 'isSafe' (bool) and 'status' (String)
+  static Future<Map<String, dynamic>> checkNsfw(String imageUrl) async {
+      try {
+          final response = await http.post(
+              Uri.parse('${AppConfig.upzBackendUrl}/api/helpers/image/nsfw'),
+              headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': 'Bearer ${AppConfig.nsfwApiKey}',
+              },
+              body: jsonEncode({'imageUrl': imageUrl}),
+          ).timeout(const Duration(seconds: 8)); // 8s timeout as requested for "revision" fallback
+
+          if (response.statusCode == 200) {
+              final List<dynamic> predictions = jsonDecode(response.body);
+              
+              // Search for 'Porn', 'Hentai', 'Sexy' categories
+              // nsfwjs default categories are: 'Drawing', 'Hentai', 'Neutral', 'Porn', 'Sexy'
+              bool isSafe = true;
+              double riskScore = 0.0;
+
+              for (var p in predictions) {
+                  final className = p['className'] as String;
+                  final probability = p['probability'] as double;
+
+                  if (['Porn', 'Hentai'].contains(className) && probability > 0.3) {
+                      isSafe = false;
+                      riskScore = probability;
+                      break;
+                  }
+                  if (className == 'Sexy' && probability > 0.6) {
+                      isSafe = false;
+                      riskScore = probability;
+                      break;
+                  }
+              }
+
+              return {
+                  'isSafe': isSafe,
+                  'status': isSafe ? 'safe' : 'NSFW detected ($riskScore)',
+              };
+          } else if (response.statusCode == 401) {
+              return {'isSafe': true, 'status': 'auth_error_skipped'}; // Safety fallback: if API key fails, don't block user but log it
+          }
+          
+          return {'isSafe': true, 'status': 'error_skipped'};
+      } on TimeoutException {
+          return {'isSafe': true, 'status': 'timeout_pending_review'};
+      } catch (e) {
+          print('NSFW Check Error: $e');
+          return {'isSafe': true, 'status': 'exception_skipped'};
+      }
   }
 
   /// Fetches pending reports from other users for this EAN

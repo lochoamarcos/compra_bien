@@ -114,7 +114,11 @@ class VeaRepository {
              String? promoDesc;
              if (oldPrice != null && oldPrice > price) {
                  int pct = (((oldPrice - price) / oldPrice) * 100).round();
-                 promoDesc = "$pct% OFF";
+                 // Sanity check: Vea has a bug where ListPrice is sometimes huge (e.g. $433,884 vs $5,250)
+                 // resulting in 98% off. We ignore these crazy discounts.
+                 if (pct < 90) {
+                     promoDesc = "$pct% OFF";
+                 }
              }
              
              if ((ean.isNotEmpty || name.isNotEmpty) && price > 0) {
