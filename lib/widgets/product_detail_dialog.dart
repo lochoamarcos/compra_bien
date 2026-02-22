@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'dart:convert';
@@ -12,6 +13,7 @@ import '../providers/product_provider.dart';
 import '../providers/report_provider.dart';
 import '../services/report_service.dart';
 import '../services/correction_service.dart';
+import '../utils/string_extensions.dart';
 
 class ProductDetailDialog extends StatefulWidget {
   final String title;
@@ -53,6 +55,10 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
   final TextEditingController _correctionOfferController = TextEditingController(); // e.g. "2da al 50%"
   XFile? _correctionImage;
   final ImagePicker _picker = ImagePicker();
+
+  // Multi-Report Note State
+  final TextEditingController _reportNoteController = TextEditingController();
+  bool _isNoteExpanded = false;
 
   @override
   void initState() {
@@ -158,10 +164,30 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(selectedProd.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                              const SizedBox(height: 4),
-                              if (selectedProd.brand != null)
-                                Text('Marca: ${selectedProd.brand}', style: const TextStyle(fontSize: 14, color: Colors.grey)),
+                               Text(
+                                 selectedProd.name.toTitleCase(), 
+                                 style: TextStyle(
+                                   fontSize: 18, 
+                                   fontWeight: FontWeight.bold,
+                                   color: Theme.of(context).brightness == Brightness.dark ? Colors.white70 : Colors.black87
+                                 )
+                               ),
+                               if (selectedProd.promoDescription != null && selectedProd.promoDescription!.isNotEmpty)
+                                  Container(
+                                     margin: const EdgeInsets.only(top: 4),
+                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                     decoration: BoxDecoration(
+                                        color: const Color(0xFFFF5722),
+                                        borderRadius: BorderRadius.circular(8),
+                                     ),
+                                     child: Text(
+                                        selectedProd.promoDescription!,
+                                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                                     ),
+                                  ),
+                               const SizedBox(height: 4),
+                               if (selectedProd.brand != null)
+                                 Text('Marca: ${selectedProd.brand!.toTitleCase()}', style: const TextStyle(fontSize: 14, color: Colors.grey)),
                             ],
                           ),
                         ),
@@ -269,6 +295,8 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
   }
 
   Widget _buildMarketChipsList(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
     return Wrap(
       spacing: 8,
       runSpacing: 8,
@@ -276,6 +304,8 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
           final prod = p['prod'] as Product;
           final style = p['style'] as MarketStyle;
           final isSelected = style.name == _selectedMarketName;
+          
+          final labelText = '${style.name}: \$${prod.price.toStringAsFixed(0)}';
           
           return ActionChip(
             onPressed: isSelected ? null : () {
@@ -289,9 +319,19 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
               backgroundColor: style.primaryColor, 
               child: Text(style.name[0], style: const TextStyle(color: Colors.white, fontSize: 10))
             ),
-            label: Text('${style.name}: \$${prod.price.toStringAsFixed(0)}'),
-            backgroundColor: isSelected ? style.primaryColor.withOpacity(0.2) : style.primaryColor.withOpacity(0.05),
-            side: BorderSide(color: isSelected ? style.primaryColor : Colors.transparent),
+            label: Text(labelText, style: TextStyle(
+              color: isDark 
+                  ? Colors.white70 
+                  : (isSelected ? style.primaryColor : Colors.black87),
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            )),
+            backgroundColor: isSelected 
+                ? (isDark ? const Color(0xFF00ACC1).withOpacity(0.25) : style.primaryColor.withOpacity(0.15)) 
+                : (isDark ? const Color(0xFF37474F) : style.primaryColor.withOpacity(0.05)),
+            side: BorderSide(
+              color: isSelected ? style.primaryColor : (isDark ? Colors.white10 : Colors.transparent), 
+              width: isSelected ? 2 : 1
+            ),
           );
       }).toList(),
     );
@@ -396,8 +436,8 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
                                        ),
                                      )
                                    : const SizedBox(width: 40),
-                                title: Text(p.name, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                                subtitle: Text('\$${p.price}', style: const TextStyle(fontSize: 12)),
+                                 title: Text(p.name.toTitleCase(), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                 subtitle: Text('\$${p.price}', style: const TextStyle(fontSize: 12)),
                                 trailing: ElevatedButton(
                                    style: ElevatedButton.styleFrom(minimumSize: const Size(60, 25), padding: EdgeInsets.zero),
                                    child: const Text('Vincular', style: TextStyle(fontSize: 10)),
@@ -547,7 +587,7 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
                    final isReported = reportProvider.isReported(widget.result);
                    return ExpansionTile(
                       // Use a key to force rebuild if needed, though Consumer handles it
-                      title: const Text('Reportar Error (Selección)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.orange)),
+                      title: const Text('Reportar Error', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.orange)),
                       leading: const Icon(Icons.warning_amber_rounded, color: Colors.orange),
                       children: [
                           if (isReported)
@@ -582,9 +622,60 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
                               if (_selectedBadMarkets.isNotEmpty)
                                   Padding(
                                     padding: const EdgeInsets.all(8.0),
-                                    child: ElevatedButton(
-                                        onPressed: () => reportProvider.addItem(widget.result, _selectedBadMarkets.toSet()),
-                                        child: const Text('Reportar Selección')
+                                    child: Column(
+                                      children: [
+                                        ElevatedButton(
+                                            onPressed: () {
+                                              reportProvider.addItem(
+                                                widget.result, 
+                                                _selectedBadMarkets.toSet(),
+                                                note: _reportNoteController.text.isNotEmpty ? _reportNoteController.text : null,
+                                              );
+                                              // Clear note after adding if desired, or keep it. 
+                                              // Let's clear to avoid confusion if they report another thing.
+                                              _reportNoteController.clear();
+                                              setState(() => _isNoteExpanded = false);
+                                            },
+                                            child: const Text('Reportar Selección')
+                                        ),
+                                        const SizedBox(height: 8),
+                                        InkWell(
+                                          onTap: () => setState(() => _isNoteExpanded = !_isNoteExpanded),
+                                          child: Padding(
+                                            padding: const EdgeInsets.symmetric(vertical: 4),
+                                            child: Row(
+                                              mainAxisAlignment: MainAxisAlignment.center,
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const Text('Dejar mensaje ', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                                                Icon(
+                                                  _isNoteExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_right,
+                                                  size: 16,
+                                                  color: Colors.grey,
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                        AnimatedContainer(
+                                          duration: const Duration(milliseconds: 200),
+                                          height: _isNoteExpanded ? 80 : 0,
+                                          curve: Curves.easeInOut,
+                                          child: _isNoteExpanded 
+                                            ? TextField(
+                                                controller: _reportNoteController,
+                                                maxLines: 2,
+                                                style: const TextStyle(fontSize: 12),
+                                                decoration: InputDecoration(
+                                                  hintText: 'Escribí tu mensaje aquí...',
+                                                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                                  isDense: true,
+                                                ),
+                                              )
+                                            : const SizedBox.shrink(),
+                                        ),
+                                      ],
                                     ),
                                   )
                           ]

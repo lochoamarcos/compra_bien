@@ -10,8 +10,17 @@ import 'screens/onboarding_screen.dart';
 
 import 'services/analytics_service.dart';
 
+import 'dart:ui';
 import 'services/correction_service.dart';
 import 'utils/app_config.dart';
+
+class CustomScrollBehavior extends MaterialScrollBehavior {
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+        PointerDeviceKind.touch,
+        PointerDeviceKind.mouse,
+      };
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -77,6 +86,7 @@ class _CompraBienAppState extends State<CompraBienApp> with WidgetsBindingObserv
           themeMode: themeProvider.themeMode,
           theme: _getThemeData(themeProvider.themeType, Brightness.light),
           darkTheme: _getThemeData(themeProvider.themeType, Brightness.dark),
+          scrollBehavior: CustomScrollBehavior(),
           home: widget.showOnboarding ? const OnboardingScreen() : const HomeScreen(),
           debugShowCheckedModeBanner: false,
           builder: (context, child) {
@@ -109,25 +119,29 @@ class _CompraBienAppState extends State<CompraBienApp> with WidgetsBindingObserv
 
     // --- Classic (Turquoise/Celeste) ---
     Color primary = const Color(0xFF00ACC1); // Elegant Turquoise
-    Color scaffoldBg = isDark ? const Color(0xFF121212) : const Color(0xFFF5F7FA);
+    Color scaffoldBg = isDark ? const Color(0xFF121212) : const Color(0xFFFFFFFF); // Pure white for light mode
     Color cardColor = isDark ? const Color(0xFF1E1E1E) : Colors.white;
 
     return ThemeData(
       useMaterial3: true,
       brightness: brightness,
-      // primaryColor removed as colorSchemeSeed handles it
+      // font family "Inter" will be handled by GoogleFonts in widgets or via pubspec
+      // For now, we rely on default sans-serif but style it in widgets
+      fontFamily: 'Roboto', // Default, will switch to Inter via GoogleFonts if added
       colorSchemeSeed: primary,
       scaffoldBackgroundColor: scaffoldBg,
       cardColor: cardColor,
       appBarTheme: AppBarTheme(
-        backgroundColor: isDark ? const Color(0xFF1E1E1E) : primary,
+        backgroundColor: primary, // Always primary as per new header design
         foregroundColor: Colors.white,
+        elevation: 0,
       ),
       cardTheme: CardThemeData(
         elevation: isDark ? 0 : 2,
         color: cardColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)), // 20px radius
       ),
+      // Add TextTheme adjustments if needed for Inter
     );
   }
 }

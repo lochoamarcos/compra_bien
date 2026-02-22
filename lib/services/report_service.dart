@@ -196,16 +196,20 @@ class ReportService {
 
     // Device Info
     try {
-        DeviceInfoPlugin deviceInfo = DeviceInfoPlugin();
-        if (Platform.isAndroid) {
-          AndroidDeviceInfo androidInfo = await deviceInfo.androidInfo;
-          sb.writeln("Device: ${androidInfo.manufacturer} ${androidInfo.model}");
-          sb.writeln("OS: Android ${androidInfo.version.release} (SDK ${androidInfo.version.sdkInt})");
-          sb.writeln("ID: ${androidInfo.id}");
-        } else if (Platform.isIOS) {
-          IosDeviceInfo iosInfo = await deviceInfo.iosInfo;
-          sb.writeln("Device: ${iosInfo.utsname.machine}");
-          sb.writeln("OS: iOS ${iosInfo.systemVersion}");
+        if (!kIsWeb) {
+          DeviceInfoPlugin deviceInfo = DeviceInfoPlugin();
+          if (Platform.isAndroid) {
+            AndroidDeviceInfo androidInfo = await deviceInfo.androidInfo;
+            sb.writeln("Device: ${androidInfo.manufacturer} ${androidInfo.model}");
+            sb.writeln("OS: Android ${androidInfo.version.release} (SDK ${androidInfo.version.sdkInt})");
+            sb.writeln("ID: ${androidInfo.id}");
+          } else if (Platform.isIOS) {
+            IosDeviceInfo iosInfo = await deviceInfo.iosInfo;
+            sb.writeln("Device: ${iosInfo.utsname.machine}");
+            sb.writeln("OS: iOS ${iosInfo.systemVersion}");
+          }
+        } else {
+          sb.writeln("Platform: Web");
         }
     } catch (e) {
         sb.writeln("Device Info: Unavailable ($e)");

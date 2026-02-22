@@ -42,6 +42,10 @@ class ProductProvider with ChangeNotifier {
 
   // Live Enrichment State: Set<ResultKey + MarketName>
   final Set<String> _enrichingKeys = {};
+  // Sorting State
+  String _sortMode = 'default'; // 'default' or 'priority'
+  String get sortMode => _sortMode;
+
   bool isMarketEnriching(ComparisonResult result, String marketName) {
       String key = _getResultUid(result);
       return _enrichingKeys.contains('$key|$marketName');
@@ -160,6 +164,7 @@ class ProductProvider with ChangeNotifier {
       _currentQuery = category; 
       _currentCategory = category;
       _processedEans.clear();
+      await _loadSortSettings();
       notifyListeners();
 
       await _fetchPage(_currentPage);
@@ -378,12 +383,40 @@ class ProductProvider with ChangeNotifier {
   // Active Markets for Search (defaults to all)
   Set<String> _activeMarkets = {'Monarca', 'Carrefour', 'Vea', 'La Coope'};
 
-  void reorderMarkets(int oldIndex, int newIndex) {
+  Future<void> _loadSortSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    _sortMode = prefs.getString('sort_mode') ?? 'default';
+    final List<String>? savedPriority = prefs.getStringList('market_priority');
+    if (savedPriority != null && savedPriority.length == 4) {
+      _marketPriority = savedPriority;
+    }
+  }
+
+  Future<void> setSortMode(String mode) async {
+    _sortMode = mode;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('sort_mode', mode);
+    // Re-sort results
+    if (_searchResults.isNotEmpty) _applySort(_searchResults);
+    if (_categoryResults.isNotEmpty) _applySort(_categoryResults);
+    notifyListeners();
+  }
+
+  void reorderMarkets(int oldIndex, int newIndex) async {
     if (oldIndex < newIndex) {
       newIndex -= 1;
     }
     final String item = _marketPriority.removeAt(oldIndex);
     _marketPriority.insert(newIndex, item);
+    
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('market_priority', _marketPriority);
+    
+    // Re-sort results if in priority mode
+    if (_sortMode == 'priority') {
+      if (_searchResults.isNotEmpty) _applySort(_searchResults);
+      if (_categoryResults.isNotEmpty) _applySort(_categoryResults);
+    }
     notifyListeners();
   }
 
@@ -629,38 +662,8 @@ class ProductProvider with ChangeNotifier {
           }
       }
 
-      // --- NEW SORTING LOGIC ---
-      // User Request: "Prioritize products with 3 or more markets available first, then 2, then 1"
-      uniqueBatch.sort((a, b) {
-          // 1. Availability Count (Descending)
-          int countA = 0;
-          if (a.monarcaProduct != null) countA++;
-          if (a.carrefourProduct != null) countA++;
-          if (a.coopeProduct != null) countA++;
-          if (a.veaProduct != null) countA++;
-
-          int countB = 0;
-          if (b.monarcaProduct != null) countB++;
-          if (b.carrefourProduct != null) countB++;
-          if (b.coopeProduct != null) countB++;
-          if (b.veaProduct != null) countB++;
-
-          // Priority Tiers: 
-          // Tier 1: 3 or 4 markets (count >= 3)
-          // Tier 2: 2 markets (count == 2)
-          // Tier 3: 1 market (count <= 1)
-
-          int tierA = (countA >= 3) ? 1 : (countA == 2 ? 2 : 3);
-          int tierB = (countB >= 3) ? 1 : (countB == 2 ? 2 : 3);
-          
-          if (tierA != tierB) {
-             return tierA.compareTo(tierB); // Lower tier number comes first
-          }
-
-          // 2. Secondary Sort: Relevance (Simple string length match or existing order?)
-          // For now, keep existing relative order from API/Merge which implies relevance
-          return 0; 
-      });
+      // Apply Sorting
+      _applySort(uniqueBatch);
 
       if (_currentCategory != null) {
          _categoryResults.addAll(uniqueBatch);
@@ -684,6 +687,61 @@ class ProductProvider with ChangeNotifier {
         notifyListeners();
       }
     }
+  }
+
+  void _applySort(List<ComparisonResult> list) {
+    if (_sortMode == 'priority') {
+      list.sort((a, b) {
+        for (String market in _marketPriority) {
+          bool inA = _hasProductInMarket(a, market);
+          bool inB = _hasProductInMarket(b, market);
+          if (inA && !inB) return -1;
+          if (inB && !inA) return 1;
+        }
+        return 0;
+      });
+    } else {
+      // Default Match Count Logic
+      list.sort((a, b) {
+        int countA = _getMarketCount(a);
+        int countB = _getMarketCount(b);
+
+        int tierA = (countA >= 3) ? 1 : (countA == 2 ? 2 : 3);
+        int tierB = (countB >= 3) ? 1 : (countB == 2 ? 2 : 3);
+        
+        if (tierA != tierB) {
+           return tierA.compareTo(tierB);
+        }
+
+        // Secondary Sort: Market Priority
+        for (String market in _marketPriority) {
+            bool inA = _hasProductInMarket(a, market);
+            bool inB = _hasProductInMarket(b, market);
+            if (inA && !inB) return -1;
+            if (inB && !inA) return 1;
+        }
+        return 0;
+      });
+    }
+  }
+
+  bool _hasProductInMarket(ComparisonResult res, String market) {
+    switch (market) {
+      case 'Monarca': return res.monarcaProduct != null;
+      case 'Carrefour': return res.carrefourProduct != null;
+      case 'Vea': return res.veaProduct != null;
+      case 'La Coope': return res.coopeProduct != null;
+      default: return false;
+    }
+  }
+
+  int _getMarketCount(ComparisonResult res) {
+    int count = 0;
+    if (res.monarcaProduct != null) count++;
+    if (res.carrefourProduct != null) count++;
+    if (res.veaProduct != null) count++;
+    if (res.coopeProduct != null) count++;
+    return count;
   }
 
   Future<void> enrichResult(ComparisonResult result) async {

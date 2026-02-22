@@ -45,6 +45,9 @@ class _ReportProblemDialogState extends State<ReportProblemDialog> {
        for (var item in reportItems) {
            finalMessage += '- ${item.result.name} (EAN: ${item.result.ean})\n';
            finalMessage += '  Mercados con error: ${item.problematicMarkets.join(', ')}\n';
+           if (item.note != null && item.note!.isNotEmpty) {
+              finalMessage += '  Mensaje adjunto: ${item.note}\n';
+           }
        }
     }
 

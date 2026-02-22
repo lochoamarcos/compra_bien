@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'product_detail_dialog.dart';
+import '../screens/cart_screen.dart';
 
 import '../models/product.dart';
 import '../utils/market_branding.dart';
@@ -79,661 +81,411 @@ class _ProductCardState extends State<ProductCard> {
   @override
   Widget build(BuildContext context) {
     final availableProducts = _getAvailableProducts();
-    
-    // If no products visible, hide
     if (availableProducts.isEmpty) return const SizedBox.shrink();
 
-    // Sort by price to find "Best"
     final sortedProducts = List<Map<String, Object>>.from(availableProducts);
     sortedProducts.sort((a, b) => (a['price'] as double).compareTo(b['price'] as double));
     
     final bestOption = sortedProducts.first;
     final bestMarketName = (bestOption['style'] as MarketStyle).name;
     
-    // Ensure selected is valid, else fallback to best
     if (_selectedMarketName == null || !availableProducts.any((p) => (p['style'] as MarketStyle).name == _selectedMarketName)) {
        _selectedMarketName = bestMarketName;
     }
 
-    // Identify current display product (for image/title)
-    Map<String, Object> selectedProductMap;
-    try {
-      selectedProductMap = availableProducts.firstWhere((p) => (p['style'] as MarketStyle).name == _selectedMarketName);
-    } catch (_) {
-      selectedProductMap = bestOption;
-    }
-    
+    final selectedProductMap = availableProducts.firstWhere(
+      (p) => (p['style'] as MarketStyle).name == _selectedMarketName,
+      orElse: () => bestOption
+    );
+
     final displayProduct = selectedProductMap['prod'] as Product;
-    
-    // Image, Title, Subtitle Logic
+    final title = displayProduct.name.toTitleCase();
+    final subtitle = (displayProduct.brand ?? '').toTitleCase();
     final imageUrl = displayProduct.imageUrl;
-    String title = widget.result.name;
-    String subtitle = '';
 
-    String brand = (displayProduct.brand ?? '').toTitleCase();
-    String name = widget.result.name.toTitleCase();
-    if (name == 'Unknown' || name.isEmpty) name = displayProduct.name.toTitleCase();
-    
-    if (brand.isNotEmpty) {
-        title = brand;
-        subtitle = name.replaceAll(RegExp(brand, caseSensitive: false), '').trim();
-    } else {
-        List<String> words = name.split(' ');
-        if (words.length > 2) {
-           title = words.take(2).join(' ');
-           subtitle = words.skip(2).join(' ');
-        }
-    }
-    String presentation = displayProduct.presentation;
-    if (presentation.isNotEmpty) subtitle = '$subtitle $presentation'.trim();
-
-    // Missing Markets
-    // Missing Markets & Loading State
-    final provider = Provider.of<ProductProvider>(context); // Listen to changes
-    final missingMarkets = <String>[];
-    final loadingMarkets = <String>[];
-
-    void checkMarketState(String marketName, Product? product) {
-       if (widget.activeMarkets.contains(marketName)) {
-          if (product == null) {
-             if (provider.isMarketEnriching(widget.result, marketName)) {
-                loadingMarkets.add(marketName);
-             } else {
-                missingMarkets.add(marketName);
-             }
-          }
-       }
+    if (widget.isHorizontal) {
+      return _buildHorizontalLayout(context, availableProducts, bestOption, bestMarketName, selectedProductMap);
     }
 
-    checkMarketState('Monarca', widget.result.monarcaProduct);
-    checkMarketState('Carrefour', widget.result.carrefourProduct);
-    checkMarketState('La Coope', widget.result.coopeProduct);
-    checkMarketState('Vea', widget.result.veaProduct);
+    // Vertical Layout
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          )
+        ]
+      ),
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildImageAndTitle(displayProduct, title, subtitle, imageUrl, availableProducts),
+          const SizedBox(height: 16),
+          
+          // Unified Price Grid
+          _buildPriceGrid(availableProducts, bestMarketName, false),
 
-    // UI Builders
-    Widget buildImageAndTitle() {
-      // Logic from HomeScreen...
-       return InkWell(
-        onTap: () => _showProductDetail(context, title, subtitle, imageUrl, availableProducts, _selectedMarketName),
-        child: Column(
-          children: [
-              if (imageUrl != null)
-                Stack(
-                  alignment: Alignment.topLeft,
-                  children: [
-                    CachedNetworkImage(
-                      imageUrl: imageUrl, 
-                      height: widget.isHorizontal ? 80 : 100, 
-                      width: double.infinity,
-                      fit: BoxFit.contain,
-                      placeholder: (_, __) => const Center(child: Icon(Icons.shopping_bag, color: Colors.grey)),
-                      errorWidget: (_, __, ___) => const Icon(Icons.image_not_supported, color: Colors.grey),
-                    ),
-                    if (displayProduct.oldPrice != null && displayProduct.oldPrice! > displayProduct.price)
-                       _buildPromoBadge(displayProduct),
-                  ],
-                )
-             else 
-                Icon(Icons.shopping_bag, size: widget.isHorizontal ? 50 : 80, color: Colors.grey),
-             
-             if (!widget.isHorizontal) ...[
-                 const SizedBox(height: 8),
-                 Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                    color: Theme.of(context).brightness == Brightness.dark ? Colors.white : Colors.black87
-                 )),
-                 if (subtitle.isNotEmpty)
-                    Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: Colors.grey)),
-             ]
-          ],
-        ),
-      );
-    }
-    
-    final allTags = <Widget>[
-       if (widget.activeMarkets.contains('Monarca') && widget.result.monarcaProduct != null) 
-          _buildSelectableTag(MarketStyle.monarca, widget.result.monarcaProduct!, bestMarketName),
-       if (widget.activeMarkets.contains('Carrefour') && widget.result.carrefourProduct != null) 
-          _buildSelectableTag(MarketStyle.carrefour, widget.result.carrefourProduct!, bestMarketName),
-       if (widget.activeMarkets.contains('La Coope') && widget.result.coopeProduct != null) 
-          _buildSelectableTag(MarketStyle.cooperativa, widget.result.coopeProduct!, bestMarketName),
-       if (widget.activeMarkets.contains('Vea') && widget.result.veaProduct != null) 
-          _buildSelectableTag(MarketStyle.vea, widget.result.veaProduct!, bestMarketName),
-       
-       // Loading Chip
-       if (loadingMarkets.isNotEmpty)
-          _buildLoadingChip(loadingMarkets),
-    ];
-    
-    // Add logic
-    void onAdd() {
-       final productToAdd = selectedProductMap['prod'] as Product;
-       final bestProduct = bestOption['prod'] as Product;
-       
-       Provider.of<CartProvider>(context, listen: false).addItem(
-          productToAdd,
-          bestMarket: bestMarketName,
-          bestPrice: bestProduct.price
-       );
-       ScaffoldMessenger.of(context).hideCurrentSnackBar();
-       ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-             content: Text('Agregado: ${productToAdd.source} (\$${productToAdd.price})'), 
-             duration: const Duration(milliseconds: 500)
-          ),
-       );
-    }
+          const SizedBox(height: 16),
 
-    if (!widget.isHorizontal) {
-       // Vertical Layout
+          // Footer Action
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              if (_selectedMarketName == bestMarketName && availableProducts.length > 1)
+                 _buildSavingsBadge(sortedProducts, bestOption)
+              else
+                 const SizedBox(),
+
+              // Vertical Counter
+              Consumer<CartProvider>(
+                 builder: (context, cart, child) {
+                   final productToAdd = selectedProductMap['prod'] as Product;
+                   final cartItemIndex = cart.items.indexWhere((item) => 
+                     ((item.product.ean.isNotEmpty && item.product.ean == productToAdd.ean) || (item.product.name == productToAdd.name)) && 
+                     item.product.source == productToAdd.source
+                   );
+                   final isInCart = cartItemIndex >= 0;
+                   final quantity = isInCart ? cart.items[cartItemIndex].quantity : 0;
+
+                   return Container(
+                     width: 48,
+                     decoration: BoxDecoration(
+                       color: isInCart ? const Color(0xFF00ACC1).withOpacity(0.1) : const Color(0xFF00ACC1),
+                       borderRadius: BorderRadius.circular(16),
+                       border: isInCart ? Border.all(color: const Color(0xFF00ACC1)) : null,
+                       boxShadow: isInCart ? [] : [
+                         BoxShadow(color: const Color(0xFF00ACC1).withOpacity(0.4), blurRadius: 8, offset: const Offset(0, 4))
+                       ],
+                     ),
+                     child: Column(
+                       mainAxisSize: MainAxisSize.min,
+                       children: [
+                         if (!isInCart)
+                            IconButton(
+                              icon: const Icon(Icons.add, color: Colors.white, size: 28),
+                              onPressed: () => cart.addItem(productToAdd, bestMarket: bestMarketName, bestPrice: (bestOption['prod'] as Product).price),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            )
+                         else ...[
+                            IconButton(
+                              icon: const Icon(Icons.add, size: 20, color: Color(0xFF00ACC1)),
+                              onPressed: () => cart.addItem(productToAdd, bestMarket: bestMarketName, bestPrice: (bestOption['prod'] as Product).price),
+                              padding: const EdgeInsets.all(4),
+                              constraints: const BoxConstraints(),
+                            ),
+                            Text('$quantity', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF00ACC1))),
+                            IconButton(
+                              icon: const Icon(Icons.remove, size: 20, color: Color(0xFF00ACC1)),
+                              onPressed: () => cart.removeSingleItem(cart.items[cartItemIndex]),
+                              padding: const EdgeInsets.all(4),
+                              constraints: const BoxConstraints(),
+                            ),
+                         ],
+                       ],
+                     ),
+                   );
+                 }
+              ),
+            ],
+          )
+        ],
+      ),
+    );
+  }
+
+  // Unified helper for grid layout
+  Widget _buildPriceGrid(List<Map<String, Object>> products, String bestMarketName, bool compact) {
+     final activePills = products.map((p) => buildMarketPill(p['style'] as MarketStyle, p['prod'] as Product, bestMarketName, compact: compact)).toList();
+     
+     if (activePills.length <= 2) {
+       return Row(children: activePills.map((w) => Expanded(child: w)).toList());
+     } else if (activePills.length == 3) {
        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-             Expanded(child: buildImageAndTitle()),
-             const SizedBox(height: 4),
-             // Tags Row
-             Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: allTags.expand((w) => [Expanded(child: w), const SizedBox(width: 4)]).take(allTags.length * 2 - 1).toList(),
-             ),
-             // Footer
-             Padding(
-                padding: const EdgeInsets.only(top: 4.0),
-                child: Column(
-                   crossAxisAlignment: CrossAxisAlignment.stretch,
-                   children: [
-                      if (missingMarkets.isNotEmpty)
-                         Text('${missingMarkets.join(', ')} no hay coincidencias', style: TextStyle(fontSize: 10, color: Colors.grey[600], fontStyle: FontStyle.italic)),
-                      const SizedBox(height: 4),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                           // Correction Check
-                           Consumer<ProductProvider>(
-                               builder: (context, provider, child) {
-                                   final correction = provider.getCorrectionForProduct(displayProduct);
-                                   if (correction != null) {
-                                      return Padding(
-                                        padding: const EdgeInsets.only(right: 8.0),
-                                        child: InkWell(
-                                          onTap: () => _showCorrectionDialog(context, correction, provider),
-                                          child: const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 24),
-                                        ),
-                                      );
-                                   }
-                                   return const SizedBox.shrink();
-                               }
-                           ),
-                           // TODO: Savings Badge logic adjusted for selection?
-                           // Currently keeping simple: If selected != best, maybe show "Perdida"?
-                           // Or just keep the general "Ahorra" if selected is best.
-                           if (_selectedMarketName == bestMarketName && availableProducts.length > 1)
-                              _buildSavingsBadge((sortedProducts.last['price'] as double) - (bestOption['price'] as double)),
-                           if (_selectedMarketName == bestMarketName && availableProducts.length > 1)
-                              const SizedBox(width: 8),
-                           
-                           Consumer<CartProvider>(
-                             builder: (context, cart, child) {
-                               final productToAdd = selectedProductMap['prod'] as Product;
-                               final bestProduct = bestOption['prod'] as Product;
-                               
-                               // Check if item is in cart (matching EAN/Name + Source)
-                               final cartItemIndex = cart.items.indexWhere((item) {
-                                  bool sameProduct = (item.product.ean.isNotEmpty && item.product.ean == productToAdd.ean) ||
-                                                     (item.product.name == productToAdd.name);
-                                  return sameProduct && item.product.source == productToAdd.source;
-                               });
-                               
-                               final isInCart = cartItemIndex >= 0;
-                               final quantity = isInCart ? cart.items[cartItemIndex].quantity : 0;
-
-                               if (isInCart) {
-                                  return Container(
-                                    // Removed height: 30
-                                    decoration: BoxDecoration(
-                                      color: (selectedProductMap['style'] as MarketStyle).primaryColor.withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(24),
-                                      border: Border.all(color: (selectedProductMap['style'] as MarketStyle).primaryColor)
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        InkWell(
-                                          onTap: () {
-                                             if (quantity > 1) {
-                                                cart.removeSingleItem(cart.items[cartItemIndex]);
-                                             } else {
-                                                cart.removeSingleItem(cart.items[cartItemIndex]); 
-                                             }
-                                          },
-                                          borderRadius: const BorderRadius.horizontal(left: Radius.circular(24)),
-                                          child: SizedBox(
-                                            width: 48, 
-                                            height: 40,
-                                            child: Icon(Icons.remove, size: 24, color: (selectedProductMap['style'] as MarketStyle).primaryColor),
-                                          ),
-                                        ),
-                                        Padding(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                                          child: Text('$quantity', style: TextStyle(fontWeight: FontWeight.bold, color: (selectedProductMap['style'] as MarketStyle).primaryColor)),
-                                        ),
-                                        InkWell(
-                                          onTap: () => cart.addItem(productToAdd, bestMarket: bestMarketName, bestPrice: bestProduct.price),
-                                          borderRadius: const BorderRadius.horizontal(right: Radius.circular(24)),
-                                          child: SizedBox(
-                                            width: 48, 
-                                            height: 40,
-                                            child: Icon(Icons.add, size: 24, color: (selectedProductMap['style'] as MarketStyle).primaryColor),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                               }
-
-                               return ElevatedButton.icon(
-                                 onPressed: onAdd,
-                                 icon: const Icon(Icons.add_shopping_cart, size: 16),
-                                 label: const Text('Agregar', style: TextStyle(fontSize: 12)),
-                                 style: ElevatedButton.styleFrom(
-                                    backgroundColor: (selectedProductMap['style'] as MarketStyle).primaryColor,
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                                    minimumSize: const Size(0, 30),
-                                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                 ),
-                               );
-                             }
-                           )
-                        ]
-                      )
-                   ]
-                ),
-             )
-          ],
+         children: [
+           Row(children: [Expanded(child: activePills[0]), Expanded(child: activePills[1])]),
+           const SizedBox(height: 4),
+           Row(
+             children: [
+               const Spacer(flex: 1), 
+               Expanded(flex: 2, child: activePills[2]), 
+               const Spacer(flex: 1)
+             ]
+           ),
+         ],
        );
-    } else {
-       // Horizontal Layout (Search)
-       return Row(
+     } else {
+       return Column(
+         children: [
+           Row(children: [Expanded(child: activePills[0]), Expanded(child: activePills[1])]),
+           const SizedBox(height: 4),
+           Row(children: [Expanded(child: activePills[2]), Expanded(child: activePills[3])]),
+         ],
+       );
+     }
+  }
+
+  // --- Horizontal Layout (Refined) ---
+  Widget _buildHorizontalLayout(BuildContext context, List<Map<String, Object>> availableProducts, Map<String, Object> bestOption, String bestMarketName, Map<String, Object> selectedProductMap) {
+      final displayProduct = selectedProductMap['prod'] as Product;
+      
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardColor,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+             BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 4))
+          ]
+        ),
+        child: Row(
           children: [
-             SizedBox(width: 100, child: buildImageAndTitle()), // Reuse image part
+             // 1. Image
+             GestureDetector(
+                onTap: () => _showProductDetail(context, displayProduct.name, displayProduct.brand ?? '', displayProduct.imageUrl, availableProducts, _selectedMarketName),
+                child: Container(
+                  width: 100,
+                  height: 150, // Fixed height for image area
+                  decoration: const BoxDecoration(
+                     color: Colors.white,
+                     borderRadius: BorderRadius.horizontal(left: Radius.circular(16))
+                  ),
+                  child: Stack(
+                    children: [
+                      CachedNetworkImage(
+                         imageUrl: displayProduct.imageUrl ?? '',
+                         fit: BoxFit.contain,
+                         placeholder: (_, __) => const Center(child: LoadingDots()),
+                         errorWidget: (_,__,___) => const Icon(Icons.image_not_supported, color: Colors.grey)
+                      ),
+                      if (displayProduct.promoDescription != null && displayProduct.promoDescription!.isNotEmpty)
+                        Positioned(
+                          top: 0,
+                          left: 0,
+                          child: _buildPromoBadge(displayProduct.promoDescription!),
+                        ),
+                    ],
+                  )
+                )
+             ),
+             
+             // 2. Info & Grid
              Expanded(
                 child: Padding(
-                   padding: const EdgeInsets.all(8.0),
+                   padding: const EdgeInsets.all(12),
                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                         // Title & Subtitle Horizontal
-                         Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                         Row(children: [
-                            Expanded(child: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: Colors.grey))),
-                            const SizedBox(width: 8),
-                            // Missing Markets X
-                            if (missingMarkets.isNotEmpty)
-                               Row(children: missingMarkets.map((m) => Text('$m X ', style: const TextStyle(color: Colors.red, fontSize: 10))).toList())
-                         ]),
+                         Text(
+                            displayProduct.name.toTitleCase(), 
+                            maxLines: 1, // Reduced to 1 to save space for grid
+                            overflow: TextOverflow.ellipsis, 
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)
+                         ),
+                         if (displayProduct.brand != null)
+                             Text(displayProduct.brand!.toTitleCase(), style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+                         
                          const SizedBox(height: 8),
-                         // Tags
-                         Row(children: allTags.map((w) => Expanded(child: Padding(padding: const EdgeInsets.only(right: 4), child: w))).toList()),
-                         const SizedBox(height: 8),
-                         // Button
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                                // Correction Check Horizontal
-                                Consumer<ProductProvider>(
-                                   builder: (context, provider, child) {
-                                       final correction = provider.getCorrectionForProduct(displayProduct);
-                                       if (correction != null) {
-                                          return Padding(
-                                            padding: const EdgeInsets.only(right: 8.0),
-                                            child: InkWell(
-                                              onTap: () => _showCorrectionDialog(context, correction, provider),
-                                              child: const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 20),
-                                            ),
-                                          );
-                                       }
-                                       return const SizedBox.shrink();
-                                   }
-                                ),
-
-                                if (_selectedMarketName == bestMarketName && availableProducts.length > 1)
-                                   _buildSavingsBadge((sortedProducts.last['price'] as double) - (bestOption['price'] as double)),
-                                const SizedBox(width: 8),
-                               Consumer<CartProvider>(
-                                 builder: (context, cart, child) {
-                                   final productToAdd = selectedProductMap['prod'] as Product;
-                                   final bestProduct = bestOption['prod'] as Product;
-                                   
-                                   final cartItemIndex = cart.items.indexWhere((item) {
-                                      bool sameProduct = (item.product.ean.isNotEmpty && item.product.ean == productToAdd.ean) ||
-                                                         (item.product.name == productToAdd.name);
-                                      return sameProduct && item.product.source == productToAdd.source;
-                                   });
-                                   
-                                   final isInCart = cartItemIndex >= 0;
-                                   final quantity = isInCart ? cart.items[cartItemIndex].quantity : 0;
-
-                                   if (isInCart) {
-                                    return Container(
-                                      // Removed fixed height: 30 to allow touch targets to size the container
-                                      decoration: BoxDecoration(
-                                        color: (selectedProductMap['style'] as MarketStyle).primaryColor.withOpacity(0.15), // Elegant opacity
-                                        borderRadius: BorderRadius.circular(24), // Increased radius for taller pill
-                                        border: Border.all(color: (selectedProductMap['style'] as MarketStyle).primaryColor.withOpacity(0.5))
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          InkWell(
-                                            onTap: () {
-                                               if (quantity > 1) {
-                                                  cart.removeSingleItem(cart.items[cartItemIndex]);
-                                               } else {
-                                                  cart.removeSingleItem(cart.items[cartItemIndex]); 
-                                               }
-                                            },
-                                            borderRadius: const BorderRadius.horizontal(left: Radius.circular(24)),
-                                            child: SizedBox(
-                                              width: 48, 
-                                              height: 40,
-                                              child: Icon(Icons.remove, size: 24, color: (selectedProductMap['style'] as MarketStyle).primaryColor),
-                                            ),
-                                          ),
-                                          Padding(
-                                            padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                                            child: Text('$quantity', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: (selectedProductMap['style'] as MarketStyle).primaryColor)),
-                                          ),
-                                          InkWell(
-                                            onTap: () => cart.addItem(productToAdd, bestMarket: bestMarketName, bestPrice: bestProduct.price),
-                                            borderRadius: const BorderRadius.horizontal(right: Radius.circular(24)),
-                                            child: SizedBox(
-                                              width: 48, 
-                                              height: 40,
-                                              child: Icon(Icons.add, size: 24, color: (selectedProductMap['style'] as MarketStyle).primaryColor),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    );
-                                   }
-
-                                   return ElevatedButton.icon(
-                                     onPressed: onAdd,
-                                     icon: const Icon(Icons.add_shopping_cart, size: 18),
-                                     label: const Text('Agregar'),
-                                     style: ElevatedButton.styleFrom(
-                                        backgroundColor: (selectedProductMap['style'] as MarketStyle).primaryColor.withOpacity(0.9), // Elegant
-                                        foregroundColor: Colors.white,
-                                        elevation: 0, // Flat elegant
-                                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                                     ),
-                                   );
-                                 }
-                               )
-                            ],
-                          )
+                         
+                         // Unified Grid (Compact version)
+                         _buildPriceGrid(availableProducts, bestMarketName, true),
                       ]
-                   ),
+                   )
+                )
+             ),
+             
+             // 3. Add Button (Circular logic)
+             Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: Consumer<CartProvider>(
+                   builder: (context, cart, child) {
+                       final productToAdd = selectedProductMap['prod'] as Product;
+                       final bestProd = bestOption['prod'] as Product;
+                       
+                       final cartItemIndex = cart.items.indexWhere((item) => 
+                           ((item.product.ean.isNotEmpty && item.product.ean == productToAdd.ean) || (item.product.name == productToAdd.name)) && 
+                           item.product.source == productToAdd.source
+                       );
+                       final isInCart = cartItemIndex >= 0;
+                       
+                       return IconButton(
+                          icon: Icon(
+                             isInCart ? Icons.check_circle : Icons.add_circle, 
+                             color: isInCart ? Colors.green : const Color(0xFF00ACC1),
+                             size: 32
+                          ),
+                          onPressed: () {
+                             if (!isInCart) {
+                                cart.addItem(productToAdd, bestMarket: bestMarketName, bestPrice: bestProd.price);
+                             }
+                          }
+                       );
+                   }
                 )
              )
-          ],
-       );
-    }
+          ]
+        )
+      );
   }
 
-   Widget _buildSelectableTag(MarketStyle style, Product product, String bestMarketName) {
-     final isSelected = style.name == _selectedMarketName;
-     final isBest = style.name == bestMarketName;
-     final isDark = Theme.of(context).brightness == Brightness.dark;
-     
-     // Elegant Styles
-     Color baseBg = isDark ? Colors.white.withOpacity(0.05) : Colors.grey[100]!;
-     
-     if (isSelected) {
-        baseBg = style.primaryColor.withOpacity(0.15); // Subtle selection
-     } else if (isBest) {
-        baseBg = Colors.green.withOpacity(0.1); // Subtle best
-     }
-     
-     Border? border;
-     if (isSelected) border = Border.all(color: style.primaryColor.withOpacity(0.6), width: 1.5);
-     else if (isBest) border = Border.all(color: Colors.green.withOpacity(0.5), width: 1.5);
-     else border = Border.all(color: Colors.transparent, width: 1.5);
-
-     // Text Colors - CRITICAL: In Dark Mode, user wants WHITE text even if best/selected
-     Color nameColor = isDark ? Colors.white70 : Colors.black87;
-     Color priceColor = isDark ? Colors.white : Colors.black;
-
-     if (isSelected && !isDark) {
-         nameColor = style.primaryColor;
-         priceColor = style.primaryColor;
-     } else if (isSelected && isDark) {
-         // In dark mode selected: keep white text, maybe colored icon/indicator if we had one
-         nameColor = HSLColor.fromColor(style.primaryColor).withLightness(0.8).toColor(); // Lighter version of primary
-         priceColor = Colors.white;
-     }
-     
-     // Best overrides
-     if (isBest && !isSelected) {
-         priceColor = isDark ? Colors.greenAccent[100]! : Colors.green[800]!;
-     }
-
-     return InkWell(
-        onTap: () {
-           setState(() {
-              _selectedMarketName = style.name;
-           });
-        },
-        child: AnimatedContainer(
-           duration: const Duration(milliseconds: 200),
-           padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-           constraints: const BoxConstraints(minHeight: 50),
-           decoration: BoxDecoration(
-              color: baseBg,
-              borderRadius: BorderRadius.circular(8),
-              border: border
-           ),
-           child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                 Text(style.name, style: TextStyle(
-                    fontSize: 10, fontWeight: FontWeight.bold,
-                    color: nameColor
-                 )),
-                 Text(
-                   NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 0).format(product.price),
-                   style: TextStyle(
-                      fontWeight: FontWeight.bold, 
-                      fontSize: 13,
-                      color: priceColor
-                   ),
-                 )
-              ]
-           ),
-        ),
-     );
-  }
-
-  Widget _buildLoadingChip(List<String> markets) {
-     return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        constraints: const BoxConstraints(minHeight: 45),
+  Widget buildMarketPill(MarketStyle style, Product product, String bestMarketName, {bool compact = false}) {
+    final isBest = style.name == bestMarketName;
+    final isSelected = style.name == _selectedMarketName;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
+    return GestureDetector(
+      onTap: () => setState(() => _selectedMarketName = style.name),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 2),
+        padding: EdgeInsets.symmetric(vertical: compact ? 4 : 8, horizontal: 4),
         decoration: BoxDecoration(
-           color: Colors.grey.withOpacity(0.1),
-           borderRadius: BorderRadius.circular(4),
+          color: isSelected 
+              ? (isDark ? const Color(0xFF00ACC1).withOpacity(0.2) : style.primaryColor.withOpacity(0.15))
+              : (isDark ? const Color(0xFF2C2C2C) : const Color(0xFFF5F5F7)),
+          borderRadius: BorderRadius.circular(compact ? 8 : 12),
+          border: isSelected 
+              ? Border.all(color: style.primaryColor, width: 2)
+              : (isBest ? Border.all(color: const Color(0xFF00C853), width: 2) : null),
         ),
         child: Column(
-           mainAxisAlignment: MainAxisAlignment.center,
-           children: [
-              SizedBox(
-                 width: 12, height: 12, 
-                 child: CircularProgressIndicator(strokeWidth: 2, color: Colors.grey[400])
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(style.name, style: TextStyle(
+              fontSize: compact ? 9 : 10, 
+              fontWeight: FontWeight.bold, 
+              color: isDark ? Colors.white54 : (isSelected ? style.primaryColor : const Color(0xFF9E9E9E))
+            )),
+            if (!compact) const SizedBox(height: 2),
+            FittedBox(
+              child: Text(
+                NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 0).format(product.price),
+                style: TextStyle(
+                  fontWeight: FontWeight.w900, 
+                  fontSize: compact ? 13 : 15, 
+                  color: isSelected ? style.primaryColor : (isBest ? (isDark ? Colors.white : const Color(0xFF212121)) : (isDark ? Colors.white60 : const Color(0xFF757575)))
+                ),
               ),
-              const SizedBox(height: 4),
-              Row(
-                 mainAxisAlignment: MainAxisAlignment.center,
-                 mainAxisSize: MainAxisSize.min,
-                 children: markets.take(2).map((m) { // Show max 2 letters to save space
-                    final style = MarketStyle.get(m);
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 1.0),
-                      child: Text(
-                         m[0], 
-                         style: TextStyle(
-                            fontSize: 10, 
-                            fontWeight: FontWeight.bold, 
-                            color: style.primaryColor
-                         )
-                      ),
-                    ); 
-                 }).toList(),
-              )
-           ]
-        )
-     );
+            )
+          ],
+        ),
+      ),
+    );
   }
 
-  Widget _buildSavingsBadge(double savings) {
+  Widget _buildImageAndTitle(Product displayProduct, String title, String subtitle, String? imageUrl, List<Map<String, Object>> products) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return InkWell(
+      onTap: () => _showProductDetail(context, title, subtitle, imageUrl, products, _selectedMarketName),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              height: 120, // Proper height restored and slightly increased
+              color: Colors.white,
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: imageUrl != null 
+                      ? CachedNetworkImage(
+                          imageUrl: imageUrl, 
+                          fit: BoxFit.contain,
+                          placeholder: (_, __) => const Center(child: LoadingDots()),
+                          errorWidget: (_, __, ___) => const Center(child: Icon(Icons.image_not_supported, size: 40, color: Colors.grey)),
+                        )
+                      : const Center(child: Icon(Icons.image_not_supported, size: 40, color: Colors.grey)),
+                  ),
+                  if (displayProduct.promoDescription != null && displayProduct.promoDescription!.isNotEmpty)
+                    Positioned(
+                      top: 4,
+                      left: 4,
+                      child: _buildPromoBadge(displayProduct.promoDescription!),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(title, style: TextStyle(
+            fontWeight: FontWeight.bold, 
+            fontSize: 16,
+            color: isDark ? Colors.white70 : Colors.black87
+          ), maxLines: 2, overflow: TextOverflow.ellipsis),
+          if (subtitle.isNotEmpty)
+             Text(subtitle, style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSavingsBadge(List<Map<String, Object>> sortedProducts, Map<String, Object> bestOption) {
+     if (sortedProducts.length < 2) return const SizedBox.shrink();
+     
+     final bestPrice = (bestOption['prod'] as Product).price;
+     final secondBestPrice = (sortedProducts[1]['prod'] as Product).price;
+     final savings = secondBestPrice - bestPrice;
+     
      if (savings <= 0) return const SizedBox.shrink();
+     
      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(color: Colors.green.withOpacity(0.1), borderRadius: BorderRadius.circular(6)),
-        child: Text(
-           'Ahorrá \$${savings.toStringAsFixed(0)}',
-           style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 13),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: const Color(0xFFE8F5E9), 
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: const Color(0xFFC8E6C9))
+        ),
+        child: Row(
+           mainAxisSize: MainAxisSize.min,
+           children: [
+              const Icon(Icons.trending_down, size: 14, color: Color(0xFF2E7D32)),
+              const SizedBox(width: 4),
+              Text(
+                 'Ahorrá \$${savings.toStringAsFixed(0)}',
+                 style: const TextStyle(color: Color(0xFF2E7D32), fontWeight: FontWeight.bold, fontSize: 12),
+              ),
+           ],
         ),
      );
   }
 
-  Widget _buildPromoBadge(Product p) {
-      String text = '';
-      Color badgeColor = Colors.red;
-      Color textColor = Colors.white;
-
-      // 1. Check for SPECIAL OFFERS (Blue Badge)
-      if (p.promoDescription != null) {
-          final desc = p.promoDescription!.toLowerCase();
-          if (desc.contains(RegExp(r'\b(2da|3ra|4ta|segunda|tercera|cuarta|3x2|4x3|2x1)\b'))) {
-             text = p.promoDescription!.toUpperCase();
-             // Try to shorten: "2DA AL 50%" -> "2DA -50%"
-             text = text.replaceAll('AL ', ' -').replaceAll(' AL', ' -');
-             if (text.length > 10) text = text.substring(0, 10); // Clamp
-             
-             badgeColor = Colors.blue; 
-             textColor = Colors.white;
-          }
-      }
-
-      // 2. Fallback to Percentage / Flat offer
-      if (text.isEmpty) {
-          // New Logic: Check text claims FIRST if they look like a percentage
-          if (p.promoDescription != null && p.promoDescription!.contains('%')) {
-             final pctMatch = RegExp(r'(\d+)%').firstMatch(p.promoDescription!);
-             if (pctMatch != null) {
-                text = "${pctMatch.group(1)}% OFF";
-             }
-          }
-          
-          // If no text claim found (or no %), try Math
-          if (text.isEmpty && p.oldPrice != null && p.oldPrice! > p.price) {
-            int pct = (((p.oldPrice! - p.price) / p.oldPrice!) * 100).round();
-            text = "$pct% OFF";
-          } 
-          
-          // Only fallback to "OFERTA" if math failed and text exists but has no %
-          if (text.isEmpty && p.promoDescription != null && !p.promoDescription!.contains('%')) {
-             if (p.promoDescription!.length < 10) text = p.promoDescription!;
-             else text = "OFERTA";
-          }
-      }
-
-      if (text.isEmpty) return const SizedBox.shrink();
-
-      return Container(
-         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-         decoration: BoxDecoration(
-           color: badgeColor,
-           borderRadius: BorderRadius.circular(4),
-         ),
-         child: Text(text, style: TextStyle(color: textColor, fontSize: 10, fontWeight: FontWeight.bold)),
-      );
+  Widget _buildPromoBadge(String promo) {
+     final isCoronado = promo == "Precio Coronado";
+     return Container(
+        padding: EdgeInsets.symmetric(horizontal: isCoronado ? 6 : 8, vertical: isCoronado ? 4 : 4),
+        decoration: BoxDecoration(
+           color: const Color(0xFFFF5722), // Deep Orange
+           borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(12),
+              bottomRight: Radius.circular(12),
+           ),
+           boxShadow: [
+              BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 4, offset: const Offset(2, 2))
+           ]
+        ),
+        child: isCoronado 
+          ? _buildCrownIcon()
+          : Text(
+              promo,
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10),
+            ),
+     );
   }
 
-  // --- Correction Dialog ---
-  
-  void _showCorrectionDialog(BuildContext context, dynamic correction, ProductProvider provider) {
-      showDialog(
-         context: context,
-         builder: (ctx) => AlertDialog(
-            title: Row(
-              children: [
-                const Icon(Icons.warning_amber_rounded, color: Colors.orange),
-                const SizedBox(width: 8),
-                const Text('Reporte Comunidad', style: TextStyle(fontSize: 16))
-              ],
-            ),
-            content: Column(
-               mainAxisSize: MainAxisSize.min,
-               crossAxisAlignment: CrossAxisAlignment.start,
-               children: [
-                   if (correction.user != null)
-                      Text('Usuario: ${correction.user}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.grey)),
-                   const SizedBox(height: 8),
-                   Text(correction.message ?? 'Sin comentario adicional.'),
-                   if (correction.imageUrl != null) ...[
-                      const SizedBox(height: 8),
-                      // Ideally use cached network image
-                      Image.network(
-                        correction.imageUrl!, 
-                        height: 100, 
-                        width: double.infinity, 
-                        fit: BoxFit.cover,
-                        errorBuilder: (_,__,___) => const SizedBox.shrink()
-                      ),
-                   ],
-                   const SizedBox(height: 12),
-                   if (correction.suggestedPrice != null) ...[
-                      const Text('Precio Sugerido:', style: TextStyle(fontWeight: FontWeight.bold)),
-                      Text('\$${correction.suggestedPrice}', style: const TextStyle(fontSize: 18, color: Colors.green, fontWeight: FontWeight.bold)),
-                   ]
-               ],
-            ),
-            actions: [
-               TextButton(
-                 onPressed: () => Navigator.pop(ctx), 
-                 child: const Text('Cerrar')
-               ),
-               if (correction.suggestedPrice != null)
-                   FilledButton.icon(
-                      onPressed: () {
-                         Product? targetProduct;
-                         if (_selectedMarketName == 'Monarca') targetProduct = widget.result.monarcaParam;
-                         else if (_selectedMarketName == 'Carrefour') targetProduct = widget.result.carrefourParam;
-                         else if (_selectedMarketName == 'La Coope') targetProduct = widget.result.coopeParam;
-                         else if (_selectedMarketName == 'Vea') targetProduct = widget.result.veaParam;
-                         
-                         if (targetProduct != null) {
-                             provider.acceptCorrectionPrice(targetProduct, correction.suggestedPrice!);
-                             Navigator.pop(ctx);
-                             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                               content: Text('Precio actualizado por esta sesión.'), 
-                               backgroundColor: Colors.orange,
-                               duration: Duration(seconds: 2),
-                             ));
-                         } else {
-                             Navigator.pop(ctx);
-                         }
-                      }, 
-                      icon: const Icon(Icons.check),
-                      label: const Text('Le creo'),
-                      style: FilledButton.styleFrom(backgroundColor: Colors.orange),
-                   )
-            ],
-         )
-      );
+  Widget _buildCrownIcon() {
+    return SizedBox(
+      width: 16,
+      height: 12,
+      child: SvgPicture.string(
+        '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 19H19V17H5V19ZM19 15L17 7L14 11L12 5L10 11L7 7L5 15H19Z" fill="white"/></svg>',
+      ),
+    );
   }
 
   void _showProductDetail(BuildContext context, String title, String subtitle, String? imageUrl, List<Map<String, Object>> products, String? selectedMarketName) {
@@ -749,6 +501,4 @@ class _ProductCardState extends State<ProductCard> {
         ),
       );
   }
-
-  // Internal helper removed, using string_extensions.dart
 }

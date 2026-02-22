@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:flutter/foundation.dart';
 import 'dart:io';
 import 'dart:async'; // Added for TimeoutException
 import 'package:http/http.dart' as http;
@@ -79,7 +80,7 @@ class CorrectionService {
         'metadata': {
             'device': deviceInfo,
             'original_name': originalName ?? 'unknown',
-            'platform': Platform.isAndroid ? 'android' : 'ios',
+            'platform': kIsWeb ? 'web' : (Platform.isAndroid ? 'android' : 'ios'),
         },
         'project_id': 'comprabien', // NEW: Multi-tenancy
       });
@@ -96,6 +97,7 @@ class CorrectionService {
 
   static Future<String> _getDeviceInfo() async {
      try {
+        if (kIsWeb) return "Web Browser";
         final info = DeviceInfoPlugin();
         if (Platform.isAndroid) {
            final android = await info.androidInfo;
@@ -114,7 +116,8 @@ class CorrectionService {
      final prefs = await SharedPreferences.getInstance();
      String? id = prefs.getString('supabase_user_id');
      if (id == null) {
-        id = DateTime.now().millisecondsSinceEpoch.toString() + "_" + (Platform.isAndroid ? 'and' : 'ios'); 
+        String plat = kIsWeb ? 'web' : (Platform.isAndroid ? 'and' : 'ios');
+        id = DateTime.now().millisecondsSinceEpoch.toString() + "_" + plat; 
         await prefs.setString('supabase_user_id', id);
      }
      return id;

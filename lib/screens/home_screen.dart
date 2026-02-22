@@ -45,6 +45,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   String _selectedCategory = 'Promociones';
   bool _newUpdateAvailable = false;
   String? _pendingUpdateVersion;
+  final ScrollController _categoryScrollController = ScrollController();
 
   @override
   void initState() {
@@ -201,6 +202,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   void dispose() {
     _tabController.dispose();
     _searchController.dispose();
+    _categoryScrollController.dispose(); // Added this
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -218,146 +220,164 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: Colors.white, // Lighter background
+        elevation: 0,
+        titleSpacing: 20,
         title: Row(
           children: [
-            SvgPicture.asset(
-              'assets/app_icon_clean.svg', 
-              height: 24, 
-              width: 24,
-              colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Theme.of(context).primaryColor.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.shopping_cart, color: Theme.of(context).primaryColor),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 12),
             RichText(
-              text: const TextSpan(
-                style: TextStyle(color: Colors.white, fontSize: 20),
+              text: TextSpan(
                 children: [
-                  TextSpan(text: 'CompráBien ', style: TextStyle(fontWeight: FontWeight.bold)),
-                  TextSpan(text: 'Tandil', style: TextStyle(fontSize: 14, fontWeight: FontWeight.normal)),
+                   TextSpan(text: 'CompráBien ', style: TextStyle(color: Theme.of(context).primaryColor, fontSize: 18, fontWeight: FontWeight.normal)),
+                   TextSpan(text: 'Tandil', style: TextStyle(color: Theme.of(context).primaryColor, fontSize: 18, fontWeight: FontWeight.bold)),
                 ],
               ),
             ),
-            const Spacer(), // Push font icon to the right of title area (or just after text? User said "CompráBien Tandil (icono) Tt")
-            // Actually user said: "CompráBien Tandil (icono) Tt" -> Logo is likely the (icono).
-            // Let's interpret: Text "CompráBien Tandil", then AppIcon, then TextFields Icon.
-            // Wait, "CompráBien Tandil (icono) Tt" -> "CompráBien Tandil" [AppIcon] [Tt Icon]
-            // But previous code had Icon then Text.
-            // Let's stick to a clean Row: Text, then Icon, then Tt Icon? 
-            // "Tt este ala derecha de CompráBien... y saca el '-'"
-            // So: "CompráBien Tandil" [Tt Icon]
-            // And where is the app icon? "(icono)" might refer to app icon.
-            // Let's try: Text "CompráBien Tandil" -> Spacer -> App Icon -> Tt Icon?
-            // "CompráBien Tandil (icono) Tt" -> Maybe: Text "CompráBien Tandil", then AppIcon, then Tt Icon.
-            // Let's try to keep it compact.
+            const SizedBox(width: 8),
             IconButton(
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
-              icon: const Icon(Icons.text_fields, color: Colors.white, size: 20),
-              tooltip: 'Tamaño de Letra',
+              icon: Icon(Icons.text_fields_outlined, color: Theme.of(context).primaryColor, size: 24),
               onPressed: () => _showFontSizeDialog(context),
+              constraints: const BoxConstraints(),
+              padding: EdgeInsets.zero,
             ),
           ],
         ),
         actions: [
-          Theme(
-            data: Theme.of(context).copyWith(
-              cardColor: Theme.of(context).cardColor,
-            ),
-            child: PopupMenuButton<String>(
-              icon: const Icon(Icons.help_outline, color: Colors.white70, size: 24),
-              onSelected: (value) async {
-                if (value == 'theme') {
-                  _showThemeDialog(context);
-                } else if (value == 'tutorial') {
-                  Navigator.of(context).push(MaterialPageRoute(builder: (_) => const OnboardingScreen()));
-                } else if (value == 'city') {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Por ahora Tandil es la única ciudad disponible.')));
-                } else if (value == 'version') {
-                  _checkForUpdates(context);
-                } else if (value == 'report') {
-                  showDialog(context: context, builder: (ctx) => const ReportProblemDialog());
-                } else if (value == 'view_reports') {
-                   // _showReportsDialog(context); // Helper not accessible here, simpler to ignore or fix if needed
-                }
-              },
-              itemBuilder: (context) => [
-                const PopupMenuItem(value: 'theme', child: ListTile(leading: Icon(Icons.palette), title: Text('Cambiar Tema'))),
-                const PopupMenuDivider(),
-                const PopupMenuItem(value: 'city', child: ListTile(leading: Icon(Icons.location_city), title: Text('Cambiar ciudad'))),
-                const PopupMenuItem(value: 'version', child: ListTile(leading: Icon(Icons.system_update), title: Text('Buscar Actualizaciones'))),
-                const PopupMenuItem(value: 'tutorial', child: ListTile(leading: Icon(Icons.info_outline), title: Text('Ver tutorial / Info'))),
-                const PopupMenuDivider(),
-                const PopupMenuItem(value: 'report', child: ListTile(leading: Icon(Icons.report_problem, color: Colors.orange), title: Text('Reportar problema'))),
-              ],
-            ),
+          IconButton(
+            icon: Icon(Icons.color_lens_outlined, color: Theme.of(context).primaryColor),
+            onPressed: () => _showThemePicker(context),
           ),
-          const SizedBox(width: 4),
-          Consumer<CartProvider>(
-            builder: (_, cart, ch) => Padding(
-              padding: const EdgeInsets.only(right: 8.0), // Added padding right
-              child: Badge(
-                offset: const Offset(-4, 4),
-                label: Text(cart.itemCount.toString()),
-                isLabelVisible: cart.itemCount > 0,
-                child: IconButton(
-                  icon: const Icon(Icons.shopping_cart, size: 24),
-                  onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CartScreen())),
-                ),
-              ),
-            ),
+          PopupMenuButton<String>(
+            icon: Icon(Icons.settings_outlined, color: Theme.of(context).primaryColor),
+            onSelected: (value) {
+              if (value == 'theme') _showThemeDialog(context);
+              else if (value == 'tutorial') Navigator.of(context).push(MaterialPageRoute(builder: (_) => const OnboardingScreen()));
+              else if (value == 'sorting') _showSortingDialog(context);
+              else if (value == 'version') _checkForUpdates(context);
+              else if (value == 'report') showDialog(context: context, builder: (ctx) => const ReportProblemDialog());
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(value: 'sorting', child: ListTile(leading: Icon(Icons.sort_outlined), title: Text('Orden Productos'))),
+              const PopupMenuItem(value: 'theme', child: ListTile(leading: Icon(Icons.brightness_6), title: Text('Apariencia'))),
+              const PopupMenuItem(value: 'version', child: ListTile(leading: Icon(Icons.system_update), title: Text('Buscar Actualizaciones'))),
+              const PopupMenuItem(value: 'tutorial', child: ListTile(leading: Icon(Icons.info_outline), title: Text('Ver Tutorial'))),
+              const PopupMenuDivider(),
+              const PopupMenuItem(value: 'report', child: ListTile(leading: Icon(Icons.report_problem, color: Colors.orange), title: Text('Reportar problema'))),
+            ],
           ),
         ],
-        bottom: TabBar(
-          controller: _tabController,
-          labelColor: Colors.white,
-          unselectedLabelColor: Colors.white60,
-          indicatorColor: Colors.white,
-          tabs: [
-            Tab(
-              text: 'Categorías',
-              icon: SvgPicture.asset('assets/icon_grocery.svg', height: 24, width: 24, colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn)),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(60),
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            height: 40,
+            decoration: const BoxDecoration(
+              color: Color(0xFFF5F5F5), // Colors.grey[100] equivalent
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(20),
+                topRight: Radius.circular(20),
+              ),
             ),
-            Tab(text: 'Buscar', icon: Icon(Icons.search)),
-          ],
+            clipBehavior: Clip.antiAlias,
+            child: TabBar(
+              controller: _tabController,
+              labelColor: Colors.white, // Text color on Selected Tab (Cyan bg)
+              unselectedLabelColor: Colors.grey[800], // Darker unselected text for better contrast
+              indicatorSize: TabBarIndicatorSize.tab,
+              indicator: BoxDecoration(
+                borderRadius: BorderRadius.zero, // Outer corners rounded by parent clip
+                color: Theme.of(context).primaryColor, // Cyan background for Selected Tab
+              ),
+              padding: EdgeInsets.zero,
+              labelPadding: EdgeInsets.zero,
+              tabs: [
+                Tab(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.storefront),
+                      const SizedBox(width: 8),
+                      const Text('CATEGORÍAS', style: TextStyle(fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+                Tab(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.search),
+                      const SizedBox(width: 8),
+                      const Text('BUSCAR', style: TextStyle(fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+              ],
+              onTap: (index) => setState(() {}), // Refresh to update icon colors
+            ),
+          ),
         ),
       ),
       body: Stack(
         children: [
-          Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+          Container(
+            color: Theme.of(context).scaffoldBackgroundColor,
+            child: Column(
+              children: [
+                // Market Filters - Pill Style
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).brightness == Brightness.dark ? const Color(0xFF1E1E1E) : Colors.grey[50],
+                    border: Border(bottom: BorderSide(color: Theme.of(context).dividerColor.withOpacity(0.1))),
+                  ),
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        _buildMarketChip(MarketStyle.monarca),
+                        const SizedBox(width: 8),
+                        _buildMarketChip(MarketStyle.carrefour),
+                        const SizedBox(width: 8),
+                        _buildMarketChip(MarketStyle.vea),
+                        const SizedBox(width: 8),
+                        _buildMarketChip(MarketStyle.cooperativa),
+                      ],
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: TabBarView(
+                    controller: _tabController,
                     children: [
-                      _buildMarketChip(MarketStyle.monarca),
-                      const SizedBox(width: 8),
-                      _buildMarketChip(MarketStyle.carrefour),
-                      const SizedBox(width: 8),
-                      _buildMarketChip(MarketStyle.vea),
-                      const SizedBox(width: 8),
-                      _buildMarketChip(MarketStyle.cooperativa),
+                      _buildCategoriesTab(),
+                      _buildSearchTab(),
                     ],
                   ),
                 ),
-              ),
-              Expanded(
-                child: TabBarView(
-                  controller: _tabController,
-                  children: [
-                    _buildCategoriesTab(),
-                    _buildSearchTab(),
-                  ],
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
           if (_showTutorial) _buildTutorialOverlay(),
         ],
       ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CartScreen())),
+        backgroundColor: Theme.of(context).primaryColor,
+        child: const Icon(Icons.shopping_cart_checkout, color: Colors.white),
+      ),
     );
   }
+
+  void _showThemePicker(BuildContext context) => _showThemeDialog(context);
 
   void _showThemeDialog(BuildContext context) {
     showDialog(
@@ -507,6 +527,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               child: Stack(
                 children: [
                   ListView.builder(
+                    controller: _categoryScrollController,
                     scrollDirection: Axis.horizontal,
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     itemCount: categories.length,
@@ -527,20 +548,29 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     right: 0,
                     top: 0,
                     bottom: 0,
-                    child: IgnorePointer(
-                      child: Container(
-                        width: 40,
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.centerLeft,
-                            end: Alignment.centerRight,
-                            colors: [
-                              Theme.of(context).scaffoldBackgroundColor.withOpacity(0.0),
-                              Theme.of(context).scaffoldBackgroundColor,
-                            ],
-                          ),
+                    child: Container(
+                      width: 40,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                          colors: [
+                            Theme.of(context).scaffoldBackgroundColor.withOpacity(0.0),
+                            Theme.of(context).scaffoldBackgroundColor,
+                          ],
                         ),
-                        child: Icon(Icons.arrow_forward_ios, size: 16, color: Theme.of(context).disabledColor.withOpacity(0.5)),
+                      ),
+                      child: IconButton(
+                        icon: Icon(Icons.arrow_forward_ios, size: 16, color: Theme.of(context).disabledColor.withOpacity(0.5)),
+                        onPressed: () {
+                          if (_categoryScrollController.hasClients) {
+                             _categoryScrollController.animateTo(
+                               _categoryScrollController.offset + 150,
+                               duration: const Duration(milliseconds: 300),
+                               curve: Curves.easeInOut,
+                             );
+                          }
+                        },
                       ),
                     ),
                   ),
@@ -954,6 +984,73 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               ],
           )
        );
+  }
+
+  void _showSortingDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Consumer<ProductProvider>(
+        builder: (context, provider, _) => AlertDialog(
+          title: const Text('Orden de Productos'),
+          contentPadding: const EdgeInsets.symmetric(vertical: 20),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              RadioListTile<String>(
+                title: const Text('Por coincidencias (Default)'),
+                subtitle: const Text('Prioriza productos en más mercados'),
+                value: 'default',
+                groupValue: provider.sortMode,
+                onChanged: (val) => provider.setSortMode(val!),
+              ),
+              RadioListTile<String>(
+                title: const Text('Priorizar Supermercado'),
+                subtitle: const Text('Según tu orden personalizado'),
+                value: 'priority',
+                groupValue: provider.sortMode,
+                onChanged: (val) => provider.setSortMode(val!),
+              ),
+              if (provider.sortMode == 'priority') ...[
+                const Divider(),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                  child: Text('Arrastrá para reordenar priodidad:', 
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.grey)),
+                ),
+                SizedBox(
+                  height: 240,
+                  width: double.maxFinite,
+                  child: ReorderableListView(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    onReorder: provider.reorderMarkets,
+                    children: [
+                      for (int i = 0; i < provider.marketPriority.length; i++)
+                        ListTile(
+                          key: ValueKey(provider.marketPriority[i]),
+                          leading: const Icon(Icons.drag_indicator),
+                          title: Text(provider.marketPriority[i]),
+                          trailing: CircleAvatar(
+                            radius: 12,
+                            backgroundColor: Theme.of(context).primaryColor.withOpacity(0.1),
+                            child: Text('${i + 1}', style: const TextStyle(fontSize: 12)),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Listo'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _startOtaUpdate(BuildContext context, String apkUrl, String version) {

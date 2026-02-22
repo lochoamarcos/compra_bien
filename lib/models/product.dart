@@ -101,6 +101,12 @@ class Product {
              if (secondUnitMatch != null) {
                  String pct = secondUnitMatch.group(2)!;
                  promoDescription = "2da al $pct%";
+             } else if (cleanContent.contains('2X1')) {
+                 promoDescription = "2x1";
+             } else if (cleanContent.contains('3X2')) {
+                 promoDescription = "3x2";
+             } else if (cleanContent.contains('4X3')) {
+                 promoDescription = "4x3";
              } else {
                  promoDescription ??= content;
              }
