@@ -1,38 +1,54 @@
 <!DOCTYPE html>
 <html>
+
 <head>
-  <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
-
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
-
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
-
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
-  -->
   <base href="$FLUTTER_BASE_HREF">
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="description"
+    content="Comparador de precios de supermercados en Argentina. Encontrá las mejores ofertas de Monarca, Carrefour, Vea y La Coope.">
+  <meta name="keywords" content="comparador precios, supermercados, ofertas, argentina, monarca, carrefour, vea">
+  <meta name="theme-color" content="#00ACC1">
 
-  <!-- iOS meta tags & icons -->
+  <!-- Open Graph (WhatsApp, Facebook) -->
+  <meta property="og:title" content="CompraBien - Comparador de Precios">
+  <meta property="og:description" content="Encontrá los mejores precios de supermercados en Argentina.">
+  <meta property="og:type" content="website">
+
+  <!-- iOS PWA meta tags -->
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="compra_bien">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="CompraBien">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
+  <link rel="apple-touch-icon" sizes="512x512" href="icons/Icon-512.png">
 
   <!-- Favicon -->
-  <link rel="icon" type="image/png" href="favicon.png"/>
+  <link rel="icon" type="image/png" href="favicon.png" />
 
-  <title>compra_bien</title>
+  <title>CompraBien - Comparador de Precios</title>
   <link rel="manifest" href="manifest.json">
+  <script>
+    // Capture the beforeinstallprompt event for PWA install button
+    let _pwaInstallPrompt = null;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      _pwaInstallPrompt = e;
+      // Dispatch a custom event that Flutter can observe via JS interop
+      window.dispatchEvent(new Event('pwa-install-ready'));
+    });
+    window.triggerInstall = function () {
+      if (_pwaInstallPrompt) {
+        _pwaInstallPrompt.prompt();
+      }
+    };
+  </script>
 </head>
+
 <body>
   <script src="flutter_bootstrap.js" async></script>
 </body>
+
 </html>

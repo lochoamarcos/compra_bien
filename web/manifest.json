@@ -1,13 +1,17 @@
 {
-    "name": "compra_bien",
-    "short_name": "compra_bien",
-    "start_url": ".",
+    "name": "CompraBien - Comparador de Precios",
+    "short_name": "CompraBien",
+    "start_url": "/",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#1A1A2E",
+    "theme_color": "#00ACC1",
+    "description": "Comparador de precios de supermercados en Argentina. Encontrá las mejores ofertas de Monarca, Carrefour, Vea y La Coope.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
+    "categories": [
+        "shopping",
+        "food"
+    ],
     "icons": [
         {
             "src": "icons/Icon-192.png",

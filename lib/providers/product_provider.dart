@@ -18,7 +18,7 @@ class ProductProvider with ChangeNotifier {
   final CoopeRepository _coopeRepo = CoopeRepository();
   final VeaRepository _veaRepo = VeaRepository();
 
-  List<ComparisonResult> _searchResults = [];
+  List<ProductComparisonResult> _searchResults = [];
   bool _isLoading = false;
   String? _error;
   
@@ -33,9 +33,18 @@ class ProductProvider with ChangeNotifier {
   Map<String, Correction> _activeCorrections = {}; 
   Map<String, double> _acceptedPriceOverrides = {};
 
-  List<ComparisonResult> get searchResults => _searchResults;
-  List<ComparisonResult> _categoryResults = [];
-  List<ComparisonResult> get categoryResults => _categoryResults;
+  // --- In-Memory Search Cache (reduces API calls) ---
+  // Key: normalized query. Value: {results, timestamp, markets}
+  static const Duration _searchCacheValidity = Duration(minutes: 10);
+  final Map<String, ({List<ProductComparisonResult> results, DateTime time, Set<String> markets})> _searchCache = {};
+
+  // Product Reports (for Social Indicators "!")
+  Map<String, List<Map<String, dynamic>>> _productReports = {};
+  Map<String, List<Map<String, dynamic>>> get productReports => _productReports;
+
+  List<ProductComparisonResult> get searchResults => _searchResults;
+  List<ProductComparisonResult> _categoryResults = [];
+  List<ProductComparisonResult> get categoryResults => _categoryResults;
   bool get isLoading => _isLoading;
   String? get error => _error;
   bool get hasMore => _hasMore;
@@ -46,19 +55,19 @@ class ProductProvider with ChangeNotifier {
   String _sortMode = 'default'; // 'default' or 'priority'
   String get sortMode => _sortMode;
 
-  bool isMarketEnriching(ComparisonResult result, String marketName) {
+  bool isMarketEnriching(ProductComparisonResult result, String marketName) {
       String key = _getResultUid(result);
       return _enrichingKeys.contains('$key|$marketName');
   }
 
-  String _getResultUid(ComparisonResult r) {
+  String _getResultUid(ProductComparisonResult r) {
       if (r.ean.isNotEmpty) return 'EAN:${r.ean}';
       return 'NAME:${_normalizeName(r.name)}';
   }
 
   // Categorized Promotions: Map<CategoryName, List<MergedResults>>
-  Map<String, List<ComparisonResult>> _categorizedPromotions = {};
-  Map<String, List<ComparisonResult>> get categorizedPromotions => _categorizedPromotions;
+  Map<String, List<ProductComparisonResult>> _categorizedPromotions = {};
+  Map<String, List<ProductComparisonResult>> get categorizedPromotions => _categorizedPromotions;
 
   // Cache Configuration
   static const String _cacheKey = 'promotions_cache';
@@ -127,7 +136,7 @@ class ProductProvider with ChangeNotifier {
     'Limpieza': 'Detergente',
     'Perfumeria': 'Shampoo',
     'Mascotas': 'Alimento Perro',
-    'Bebes': 'Pañales',
+    'Bebes': 'PaÃ±ales',
     'Hogar': 'Rollo Cocina',
     'Electro': 'Pava', // Often empty, but worth a try
     'Congelados': 'Hamburguesas',
@@ -147,7 +156,7 @@ class ProductProvider with ChangeNotifier {
     'Muebles': ['Organizacion', 'Cajas', 'Hogar'], // Maps to Hogar/Muebles (storage furniture)
     'Electro': ['Electro', 'Tecnologia'],
     'Mascotas': ['Mascotas'],
-    'Bebes': ['Bebes', 'Pañales'],
+    'Bebes': ['Bebes', 'PaÃ±ales'],
     'Hogar': ['Hogar', 'Textil', 'Bazar'],
   };
   
@@ -168,6 +177,7 @@ class ProductProvider with ChangeNotifier {
       notifyListeners();
 
       await _fetchPage(_currentPage);
+      loadActiveReports(); // Load reports in background to show "!" markers
   }
 
   // --- External Methods ---
@@ -215,7 +225,7 @@ class ProductProvider with ChangeNotifier {
         
         _categorizedPromotions = {};
         jsonMap.forEach((key, value) {
-            final list = (value as List).map((i) => ComparisonResult.fromJson(i)).toList();
+            final list = (value as List).map((i) => ProductComparisonResult.fromJson(i)).toList();
             _categorizedPromotions[key] = list;
         });
         
@@ -254,17 +264,23 @@ class ProductProvider with ChangeNotifier {
     // 1. Lowercase & remove accents
     String s = name.toLowerCase();
     s = s.replaceAll('-', ' '); 
-    const accents = 'áéíóúüñ';
-    const noAccents = 'aeiouun';
-    for (int i = 0; i < accents.length; i++) {
-       s = s.replaceAll(accents[i], noAccents[i]);
-    }
+    
+    final accentMap = {
+      'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u', 'ü': 'u', 'ñ': 'n',
+    };
+    
+    accentMap.forEach((key, value) {
+      s = s.replaceAll(key, value);
+    });
     
     // Normalize variants
     s = s.replaceAll('sin azucares', 'zero');
     s = s.replaceAll('sin azucar', 'zero');
     s = s.replaceAll('light', 'zero'); 
     s = s.replaceAll('s/az', 'zero'); 
+    s = s.replaceAll('sin marca', ''); // Common from Coope
+    s = s.replaceAll('la serenisima', 'sere');
+    s = s.replaceAll('serenisima', 'sere');
     
     // Robust Volume Normalization (Regex)
     // 2250cm3 -> 2.25 | 2250 ml -> 2.25
@@ -308,7 +324,7 @@ class ProductProvider with ChangeNotifier {
     return words.join(' ');
   }
 
-  // Extract volume for strict matching
+  // Extraction logic for generic names manually selected
   double? _extractVolume(String name) {
       String norm = _normalizeName(name); 
       // Look for standalone numbers in normalized string (e.g. "2.25 coca")
@@ -328,9 +344,15 @@ class ProductProvider with ChangeNotifier {
       double? vol1 = _extractVolume(name1);
       double? vol2 = _extractVolume(name2);
       
-      // STRICT Volume Match: Products must have IDENTICAL volumes to match
-    // This prevents Coca Cola 500ml from matching with 1L, 1.5L, 2.25L, etc.
-    bool volumeMatch = (vol1 != null && vol2 != null && (vol1 - vol2).abs() < 0.001);
+      bool volumeMatch = false;
+      if (vol1 != null && vol2 != null) {
+          if ((vol1 - vol2).abs() > 0.001) {
+              // Volumes are explicitly different (e.g. 1.5L vs 2.25L). Do NOT match.
+              return false;
+          } else {
+              volumeMatch = true;
+          }
+      }
 
       String n1 = _normalizeName(name1);
       String n2 = _normalizeName(name2);
@@ -357,11 +379,18 @@ class ProductProvider with ChangeNotifier {
       
       double jaccard = intersection / union;
       
-      if (w1.length > 1 && w2.length > 1) {
-          if (w1.containsAll(w2) || w2.containsAll(w1)) return true;
+      // Standard Jaccard Similarity
+      if (w1.length > 0 && w2.length > 0) {
+          // If one is a meaningful subset of the other (sharing at least 2 words)
+          if (intersection >= 2 && (w1.length <= 3 || w2.length <= 3)) return true;
+          
+          // Identity check for subsets
+          if (w1.containsAll(w2) || w2.containsAll(w1)) {
+              if (intersection >= 2) return true;
+          }
       }
 
-      return jaccard > 0.75; // Stricter threshold to prevent false matches 
+      return jaccard > 0.58; // Standard threshold
   }
 
   // Key generation for matching map
@@ -420,21 +449,93 @@ class ProductProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  // --- Search Filtering Helpers ---
+
+  // Strict text filter to remove garbage results (e.g., searching "Gancia" shouldn't return "Fernet")
+  // and prioritize the core ingredient (e.g. searching "Garbanzo" shouldn't return "Hummus de Garbanzo" first).
+  bool _passesStrictFilter(String productName, String query) {
+      if (query.isEmpty) return true;
+      final String normName = _normalizeName(productName).toLowerCase();
+      final String normQuery = query.toLowerCase().replaceAll(RegExp(r's$'), ''); // e.g., 'garbanzos' -> 'garbanzo'
+      
+      // Split query into terms to ensure ALL terms are present in the product name
+      final List<String> queryTerms = normQuery.split(' ').where((w) => w.length > 2).toList();
+      if (queryTerms.isEmpty) return true; // If query is just tiny words, pass it.
+
+      // ALL meaningful terms from the query must be in the product name
+      for (final term in queryTerms) {
+          if (!normName.contains(term)) {
+              return false; // Fails strict filter
+          }
+      }
+      return true;
+  }
+
+  // Calculate a relevance score for sorting: Lower is better (0 = Exact Match, 1 = Starts With, 2 = Contains, 3 = Base)
+  int _calculateRelevance(ProductComparisonResult res, String query) {
+      if (query.isEmpty) return 3;
+      final String normQuery = query.toLowerCase().replaceAll(RegExp(r's$'), ''); // e.g., 'garbanzos' -> 'garbanzo'
+      
+      // Pick the best representative name
+      final String name = (res.monarcaProduct?.name ?? res.carrefourProduct?.name ?? res.coopeProduct?.name ?? res.veaProduct?.name ?? '').toLowerCase();
+      final String normName = _normalizeName(name);
+
+      if (normName == normQuery || normName == query.toLowerCase()) return 0; // Exactly the same
+      if (normName.startsWith(normQuery)) return 1; // E.g., "Gancia 900ml" fits "Gancia"
+      if (name.startsWith(normQuery) || name.startsWith(query.toLowerCase())) return 1;
+
+      // Contains the query but not at the start (e.g., "Hummus de Garbanzo")
+      return 2; 
+  }
+
   Future<void> search(String query, {Set<String>? activeMarkets}) async {
+    _activeMarkets = activeMarkets ?? {'Monarca', 'Carrefour', 'Vea', 'La Coope'};
+    final normalizedQuery = query.toLowerCase().trim();
+
+    // Check in-memory cache first
+    final cached = _searchCache[normalizedQuery];
+    if (cached != null) {
+      final isExpired = DateTime.now().difference(cached.time) > _searchCacheValidity;
+      final sameMarkets = cached.markets.containsAll(_activeMarkets) && _activeMarkets.containsAll(cached.markets);
+      if (!isExpired && sameMarkets && cached.results.isNotEmpty) {
+        AppLogger().log('🔵 Cache HIT for "$query" — skipping API calls');
+        _searchResults = List.from(cached.results);
+        _currentQuery = query;
+        _currentCategory = null;
+        _isLoading = false;
+        _hasMore = false; // results come from cache, all in one shot
+        notifyListeners();
+        return;
+      }
+    }
+
+    AppLogger().log('🌐 Cache MISS for "$query" — fetching from APIs');
     _isLoading = true;
     _error = null;
-    _searchResults = []; // Clear search results
-    // _categoryResults = []; // Do NOT clear category results
+    _searchResults = [];
     _currentPage = 0;
     _hasMore = true;
     _currentQuery = query;
-    _currentCategory = null; // Reset category mode
+    _currentCategory = null;
     _processedEans.clear();
-    _activeMarkets = activeMarkets ?? {'Monarca', 'Carrefour', 'Vea', 'La Coope'};
     
     notifyListeners();
     
     await _fetchPage(_currentPage);
+
+    // Save result to cache after successful fetch
+    if (_searchResults.isNotEmpty) {
+      _searchCache[normalizedQuery] = (
+        results: List.from(_searchResults),
+        time: DateTime.now(),
+        markets: Set.from(_activeMarkets),
+      );
+      // Keep cache lean: evict oldest entries if > 20
+      if (_searchCache.length > 20) {
+        final oldest = _searchCache.entries.reduce((a, b) => a.value.time.isBefore(b.value.time) ? a : b);
+        _searchCache.remove(oldest.key);
+      }
+    }
   }
 
   Future<void> loadMore() async {
@@ -444,6 +545,39 @@ class ProductProvider with ChangeNotifier {
     
     _currentPage++;
     await _fetchPage(_currentPage);
+  }
+
+  Future<void> loadActiveReports() async {
+      try {
+          final reports = await ReportService.fetchReports();
+          _productReports = {};
+          if (reports.isEmpty) {
+              notifyListeners();
+              return;
+          }
+          for (var r in reports) {
+              if (r == null) continue;
+              final ean = r['ean'];
+              if (ean != null && ean != 'Unknown') {
+                  _productReports.putIfAbsent(ean.toString(), () => []).add(r);
+              }
+          }
+          notifyListeners();
+      } catch (e) {
+          AppLogger().log('Error loading active reports: $e');
+      }
+  }
+
+  bool hasReportForMarket(String? ean, String market) {
+      if (ean == null || ean.isEmpty) return false;
+      final reports = _productReports[ean];
+      if (reports == null) return false;
+      return reports.any((r) => r['market']?.toString().toLowerCase().contains(market.toLowerCase()) ?? false);
+  }
+
+  bool hasAnyReport(String? ean) {
+      if (ean == null || ean.isEmpty) return false;
+      return _productReports.containsKey(ean);
   }
 
   Future<void> _fetchPage(int page) async {
@@ -469,66 +603,66 @@ class ProductProvider with ChangeNotifier {
           
           bool isPromo = _currentCategory == 'Promociones';
 
-          coopeFuture = (_activeMarkets.contains('La Coope') && _currentCategory != 'Muebles')
-              ? (isPromo 
-                  ? _coopeRepo.searchProducts('', page: page, size: 20, isPromo: true).catchError((e) { return <Product>[]; })
-                  : (coopeId.isNotEmpty 
-                      ? _coopeRepo.searchProducts('', page: page, size: 20, categoryId: coopeId).catchError((e) { return <Product>[]; })
-                      : Future.value(<Product>[])))
-              : Future.value(<Product>[]);
-          
-          // Monarca uses specific keywords since it lacks category IDs
+          // Keywords for markets without category ID mapping
           String monarcaKeyword = _monarcaCategoryKeywords[_currentCategory] ?? primaryKeyword;
+          String carrefourQuery = isPromo ? 'oferta' : primaryKeyword;
+          String veaQuery = isPromo ? 'oferta' : primaryKeyword;
+
+          // REGULAR CATEGORY LOGIC
           monarcaFuture = (_activeMarkets.contains('Monarca') && _currentCategory != 'Muebles')
               ? _monarcaRepo.searchProducts(monarcaKeyword, page: page, size: 20)
               : Future.value(<Product>[]);
-              
-          // Improved Carrefour Logic
-          String carrefourQuery = primaryKeyword;
-          if (_currentCategory == 'Promociones') carrefourQuery = 'oferta';
 
           carrefourFuture = (_activeMarkets.contains('Carrefour')) 
-              ? (_currentCategory == 'Muebles' 
-                  ? _carrefourRepo.searchProducts('Almacen', page: page, size: 20)
-                  : (carrefourId.isNotEmpty 
-                     ? _carrefourRepo.searchProducts('', page: page, size: 20, categoryId: carrefourId)
-                     : _carrefourRepo.searchProducts(carrefourQuery, page: page, size: 20)))
+              ? (carrefourId.isNotEmpty 
+                  ? _carrefourRepo.searchProducts('', page: page, size: 20, categoryId: carrefourId)
+                  : _carrefourRepo.searchProducts(carrefourQuery, page: page, size: 20))
               : Future.value(<Product>[]);
-              
-          // Improved Vea Logic
-          String veaQuery = primaryKeyword;
-          if (_currentCategory == 'Promociones') veaQuery = 'oferta';
-          
+
+          coopeFuture = (_activeMarkets.contains('La Coope') && _currentCategory != 'Muebles')
+              ? (isPromo 
+                  ? _coopeRepo.searchProducts('oferta', page: page, size: 20, isPromo: true).catchError((e) => <Product>[])
+                  : (coopeId.isNotEmpty 
+                      ? _coopeRepo.searchProducts('', page: page, size: 20, categoryId: coopeId).catchError((e) => <Product>[])
+                      : _coopeRepo.searchProducts(primaryKeyword, page: page, size: 20).catchError((e) => <Product>[])))
+              : Future.value(<Product>[]);
+
           veaFuture = (_activeMarkets.contains('Vea') && _currentCategory != 'Muebles')
-              ? _veaRepo.searchProducts('', page: page, size: 20, categoryId: veaId).then((results) async {
-                  if (results.isEmpty && veaId.isNotEmpty) {
-                      return _veaRepo.searchProducts(veaQuery, page: page, size: 20);
-                  }
-                  return results;
-              }).catchError((e) => <Product>[])
+              ? (veaId.isNotEmpty 
+                  ? _veaRepo.searchProducts('', page: page, size: 20, categoryId: veaId)
+                  : _veaRepo.searchProducts(veaQuery, page: page, size: 20))
               : Future.value(<Product>[]);
-          
-          // Apply same fallback to Carrefour
-          final carrefourBase = carrefourFuture;
-          carrefourFuture = carrefourBase.then((results) async {
-              if (results.isEmpty && carrefourId.isNotEmpty && _activeMarkets.contains('Carrefour')) {
-                  return _carrefourRepo.searchProducts(carrefourQuery, page: page, size: 20);
-              }
-              return results;
-          });
       } else {
-         // TEXT SEARCH
+         // TEXT SEARCH with Fallback for singular/plural
+         Future<List<Product>> fetchWithFallback(Future<List<Product>> Function(String) fetchCall, String query) async {
+             List<Product> items = await fetchCall(query).catchError((_) => <Product>[]);
+             if (items.isEmpty) {
+                 // Fallback Logic: Create variation
+                 String fallbackQuery = '';
+                 if (query.endsWith('s')) {
+                     fallbackQuery = query.substring(0, query.length - 1);
+                 } else {
+                     fallbackQuery = query + 's';
+                 }
+                 if (fallbackQuery.length > 3) {
+                     AppLogger().log('Fallback Search: "$query" returned 0, trying "$fallbackQuery"');
+                     items = await fetchCall(fallbackQuery).catchError((_) => <Product>[]);
+                 }
+             }
+             return items;
+         }
+
          monarcaFuture = _activeMarkets.contains('Monarca') 
-            ? _monarcaRepo.searchProducts(_currentQuery, page: page, size: 20)
+            ? fetchWithFallback((q) => _monarcaRepo.searchProducts(q, page: page, size: 20), _currentQuery)
             : Future.value(<Product>[]);
          carrefourFuture = _activeMarkets.contains('Carrefour')
-            ? _carrefourRepo.searchProducts(_currentQuery, page: page, size: 20)
+            ? fetchWithFallback((q) => _carrefourRepo.searchProducts(q, page: page, size: 20), _currentQuery)
             : Future.value(<Product>[]);
          coopeFuture = _activeMarkets.contains('La Coope')
-            ? _coopeRepo.searchProducts(_currentQuery, page: page, size: 20).catchError((e) { return <Product>[]; })
+            ? fetchWithFallback((q) => _coopeRepo.searchProducts(q, page: page, size: 20), _currentQuery)
             : Future.value(<Product>[]);
          veaFuture = _activeMarkets.contains('Vea')
-            ? _veaRepo.searchProducts(_currentQuery, page: page, size: 20).catchError((e) { return <Product>[]; })
+            ? fetchWithFallback((q) => _veaRepo.searchProducts(q, page: page, size: 20), _currentQuery)
             : Future.value(<Product>[]);
       }
 
@@ -540,10 +674,18 @@ class ProductProvider with ChangeNotifier {
           return;
       }
 
-      final monarcaItems = results[0].where((p) => p.price > 0).toList();
-      final carrefourItems = results[1].where((p) => p.price > 0).toList();
-      final coopeItems = results[2].where((p) => p.price > 0).toList();
-      final veaItems = results[3].where((p) => p.price > 0).toList();
+      // Apply Strict Filter to remove garbage results on text searches
+      List<Product> monarcaItems = results[0].where((p) => p.price > 0).toList();
+      List<Product> carrefourItems = results[1].where((p) => p.price > 0).toList();
+      List<Product> coopeItems = results[2].where((p) => p.price > 0).toList();
+      List<Product> veaItems = results[3].where((p) => p.price > 0).toList();
+
+      if (_currentCategory == null) { // Only strict filter for direct text searches
+          monarcaItems = monarcaItems.where((p) => _passesStrictFilter(p.name, _currentQuery)).toList();
+          carrefourItems = carrefourItems.where((p) => _passesStrictFilter(p.name, _currentQuery)).toList();
+          coopeItems = coopeItems.where((p) => _passesStrictFilter(p.name, _currentQuery)).toList();
+          veaItems = veaItems.where((p) => _passesStrictFilter(p.name, _currentQuery)).toList();
+      }
 
       // Check if ALL ACTIVE markets are empty
       final activeResults = <List<Product>>[];
@@ -560,9 +702,9 @@ class ProductProvider with ChangeNotifier {
       }
 
       // Merge logic
-      final Map<String, ComparisonResult> merged = {};
+      final Map<String, ProductComparisonResult> merged = {};
       
-      List<ComparisonResult> currentBatch = [];
+      List<ProductComparisonResult> currentBatch = [];
       List<Product> allProducts = [...monarcaItems, ...carrefourItems, ...coopeItems, ...veaItems];
       
       // 1. Group by EAN (Strict)
@@ -578,7 +720,7 @@ class ProductProvider with ChangeNotifier {
           }
       }
       
-      // Convert EAN groups to ComparisonResult
+      // Convert EAN groups to ProductComparisonResult
       for (var entry in eanGroups.entries) {
           Product? m, c, l, v;
           for (var p in entry.value) {
@@ -587,7 +729,7 @@ class ProductProvider with ChangeNotifier {
               else if (p.source == 'La Coope') l = p;
               else if (p.source == 'Vea') v = p;
           }
-          currentBatch.add(ComparisonResult(ean: entry.key, monarcaParam: m, carrefourParam: c, coopeParam: l, veaParam: v));
+          currentBatch.add(ProductComparisonResult(ean: entry.key, monarcaParam: m, carrefourParam: c, coopeParam: l, veaParam: v));
       }
       
       // 2. Match No-EAN products (Coope) to existing EAN groups (Fuzzy Name)
@@ -602,7 +744,7 @@ class ProductProvider with ChangeNotifier {
                   String rNameNorm = _normalizeName('${representative.brand} ${representative.name} ${representative.presentation}');
                   
                   if (_areNamesSimilar(pNameNorm, rNameNorm)) {
-                      currentBatch[i] = ComparisonResult(
+                      currentBatch[i] = ProductComparisonResult(
                           ean: result.ean,
                           monarcaParam: result.monarcaParam ?? (p.source == 'Monarca' ? p : null),
                           carrefourParam: result.carrefourParam ?? (p.source == 'Carrefour' ? p : null),
@@ -623,7 +765,7 @@ class ProductProvider with ChangeNotifier {
                      if (rep != null) {
                          String rNameNorm = _normalizeName('${rep.brand} ${rep.name} ${rep.presentation}');
                          if (_areNamesSimilar(pNameNorm, rNameNorm)) {
-                               currentBatch[i] = ComparisonResult(
+                               currentBatch[i] = ProductComparisonResult(
                                    ean: '',
                                    monarcaParam: currentBatch[i].monarcaParam ?? (p.source == 'Monarca' ? p : null),
                                    coopeParam: currentBatch[i].coopeParam ?? (p.source == 'La Coope' ? p : null),
@@ -638,7 +780,7 @@ class ProductProvider with ChangeNotifier {
               }
               
               if (!matched) {
-                  currentBatch.add(ComparisonResult(
+                  currentBatch.add(ProductComparisonResult(
                       ean: '', // No EAN
                       monarcaParam: p.source == 'Monarca' ? p : null,
                       carrefourParam: p.source == 'Carrefour' ? p : null,
@@ -649,13 +791,27 @@ class ProductProvider with ChangeNotifier {
           }
       }
 
-      // Filter out seen EANS to avoid duplicates across pages (if any)
-      List<ComparisonResult> uniqueBatch = [];
+      // Filter out seen EANS or Normalized Name+Presentation keys to avoid duplicates across pages
+      List<ProductComparisonResult> uniqueBatch = [];
       for (var res in currentBatch) {
-          // Use EAN or a robust Name+Brand+Presentation key
-          String key = res.ean.isNotEmpty ? res.ean : _normalizeName('${res.name} ${res.monarcaProduct?.presentation ?? res.carrefourProduct?.presentation ?? res.coopeProduct?.presentation ?? res.veaProduct?.presentation ?? ""}');
+          String key;
+          if (res.ean.isNotEmpty) {
+             key = "EAN:${res.ean}";
+          } else {
+             // Generate a clean name key for deduplication when EAN is missing
+             final representative = res.monarcaProduct ?? res.carrefourProduct ?? res.coopeProduct ?? res.veaProduct;
+             if (representative != null) {
+                // Normalize and remove common noise
+                String cleanName = _normalizeName("${representative.brand} ${representative.name} ${representative.presentation}")
+                    .replaceAll(RegExp(r'\s+'), ' ')
+                    .trim();
+                key = "NAME:$cleanName";
+             } else {
+                continue; // Should not happen
+             }
+          }
+
           if (!_processedEans.contains(key)) {
-             // APPLY CORRECTIONS HERE
              _applyCorrectionsToResult(res);
              uniqueBatch.add(res);
              _processedEans.add(key);
@@ -689,7 +845,7 @@ class ProductProvider with ChangeNotifier {
     }
   }
 
-  void _applySort(List<ComparisonResult> list) {
+  void _applySort(List<ProductComparisonResult> list) {
     if (_sortMode == 'priority') {
       list.sort((a, b) {
         for (String market in _marketPriority) {
@@ -701,8 +857,18 @@ class ProductProvider with ChangeNotifier {
         return 0;
       });
     } else {
-      // Default Match Count Logic
+      // Default Match Count & Relevance Logic
       list.sort((a, b) {
+        // --- 1. Relevance Sorting (For Text Searches) ---
+        if (_currentCategory == null && _currentQuery.isNotEmpty) {
+            int relA = _calculateRelevance(a, _currentQuery);
+            int relB = _calculateRelevance(b, _currentQuery);
+            if (relA != relB) {
+                return relA.compareTo(relB);
+            }
+        }
+
+        // --- 2. Match Count Tier Logic ---
         int countA = _getMarketCount(a);
         int countB = _getMarketCount(b);
 
@@ -713,7 +879,7 @@ class ProductProvider with ChangeNotifier {
            return tierA.compareTo(tierB);
         }
 
-        // Secondary Sort: Market Priority
+        // --- 3. Secondary Sort: Market Priority ---
         for (String market in _marketPriority) {
             bool inA = _hasProductInMarket(a, market);
             bool inB = _hasProductInMarket(b, market);
@@ -725,7 +891,7 @@ class ProductProvider with ChangeNotifier {
     }
   }
 
-  bool _hasProductInMarket(ComparisonResult res, String market) {
+  bool _hasProductInMarket(ProductComparisonResult res, String market) {
     switch (market) {
       case 'Monarca': return res.monarcaProduct != null;
       case 'Carrefour': return res.carrefourProduct != null;
@@ -735,7 +901,7 @@ class ProductProvider with ChangeNotifier {
     }
   }
 
-  int _getMarketCount(ComparisonResult res) {
+  int _getMarketCount(ProductComparisonResult res) {
     int count = 0;
     if (res.monarcaProduct != null) count++;
     if (res.carrefourProduct != null) count++;
@@ -744,7 +910,7 @@ class ProductProvider with ChangeNotifier {
     return count;
   }
 
-  Future<void> enrichResult(ComparisonResult result) async {
+  Future<void> enrichResult(ProductComparisonResult result) async {
       final marketsToFetch = <String>[];
       if (result.monarcaProduct == null) marketsToFetch.add('Monarca');
       if (result.carrefourProduct == null) marketsToFetch.add('Carrefour');
@@ -772,7 +938,7 @@ class ProductProvider with ChangeNotifier {
       }
   }
 
-  Future<void> _enrichMarket(ComparisonResult result, String marketName) async {
+  Future<void> _enrichMarket(ProductComparisonResult result, String marketName) async {
       try {
           List<Product> matches = [];
           
@@ -826,7 +992,7 @@ class ProductProvider with ChangeNotifier {
       }
   }
 
-  void _updateComparisonWithMarket(ComparisonResult target, Product p) {
+  void _updateComparisonWithMarket(ProductComparisonResult target, Product p) {
       if (p.source == 'Monarca') target.monarcaParam = p;
       else if (p.source == 'Carrefour') target.carrefourParam = p;
       else if (p.source == 'La Coope') target.coopeParam = p;
@@ -849,7 +1015,7 @@ class ProductProvider with ChangeNotifier {
 
 
   // Locally link a product (Session based)
-  void manualLinkProduct(ComparisonResult targetResult, String marketName, Product matchedProduct) {
+  void manualLinkProduct(ProductComparisonResult targetResult, String marketName, Product matchedProduct) {
       // 1. Update the objects in memory
       // We need to find the specific instance in _searchResults or _categoryResults
       // But since we pass the object reference (targetResult), we can update it directly!
@@ -913,7 +1079,7 @@ class ProductProvider with ChangeNotifier {
       return p.price;
   }
 
-  void _applyCorrectionsToResult(ComparisonResult res) {
+  void _applyCorrectionsToResult(ProductComparisonResult res) {
       // Deprecated: UI now uses getDisplayPrice directly.
       // Keeping method to satisfy any legacy calls if any.
   }

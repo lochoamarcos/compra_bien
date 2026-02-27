@@ -193,7 +193,7 @@ class Product {
   }
 }
 
-class ComparisonResult {
+class ProductComparisonResult {
   final String ean;
   Product? monarcaParam;
   Product? carrefourParam;
@@ -205,7 +205,7 @@ class ComparisonResult {
   Product? get coopeProduct => coopeParam;
   Product? get veaProduct => veaParam;
 
-  ComparisonResult({required this.ean, this.monarcaParam, this.carrefourParam, this.coopeParam, this.veaParam});
+  ProductComparisonResult({required this.ean, this.monarcaParam, this.carrefourParam, this.coopeParam, this.veaParam});
   
   String get name => monarcaParam?.name ?? carrefourParam?.name ?? coopeParam?.name ?? veaParam?.name ?? 'Unknown';
 
@@ -221,8 +221,8 @@ class ComparisonResult {
     };
   }
 
-  factory ComparisonResult.fromJson(Map<String, dynamic> json) {
-    return ComparisonResult(
+  factory ProductComparisonResult.fromJson(Map<String, dynamic> json) {
+    return ProductComparisonResult(
       ean: json['ean'],
       monarcaParam: json['monarcaParam'] != null ? Product.fromCachedJson(json['monarcaParam']) : null,
       carrefourParam: json['carrefourParam'] != null ? Product.fromCachedJson(json['carrefourParam']) : null,

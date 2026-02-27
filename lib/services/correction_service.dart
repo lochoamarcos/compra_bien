@@ -32,7 +32,11 @@ class CorrectionService {
       // Convert list to a Map keyed by composite ID or just iterate easily
       // Structure: { "EAN_Market": { ...details... } }
       for (var row in response) {
-         final key = "${row['ean']}_${row['market']}";
+         if (row == null) continue;
+         final ean = row['ean'];
+         final market = row['market'];
+         if (ean == null || market == null) continue;
+         final key = "${ean}_${market}";
          corrections[key] = row;
       }
       return corrections;
@@ -51,17 +55,22 @@ class CorrectionService {
     String? suggestedOffer,
     String? originalName, // Just for metadata
     String? imageUrl, // NEW: Link to the uploaded image
+    String? userName, // NEW: Optional username
+    String? note, // NEW: Optional message/note
+    bool ignoreCooldown = false, // NEW: For bulk reports
   }) async {
     final prefs = await SharedPreferences.getInstance();
     
     // 1. Anti-Spam Check (Local)
-    final lastTime = prefs.getInt(_lastReportKey);
-    if (lastTime != null) {
-       final diff = DateTime.now().millisecondsSinceEpoch - lastTime;
-       if (diff < _cooldown.inMilliseconds) {
-          print("Spam check: PLEASE WAIT");
-          return false; // Too fast
-       }
+    if (!ignoreCooldown) {
+        final lastTime = prefs.getInt(_lastReportKey);
+        if (lastTime != null) {
+           final diff = DateTime.now().millisecondsSinceEpoch - lastTime;
+           if (diff < _cooldown.inMilliseconds) {
+              print("Spam check: PLEASE WAIT");
+              return false; // Too fast
+           }
+        }
     }
 
     // 3. Metadata (Simplified)
@@ -70,27 +79,36 @@ class CorrectionService {
 
     // 4. Insert to Supabase
     try {
-      await Supabase.instance.client.from(_reportsTable).insert({
+      final insertData = {
         'ean': ean,
         'market': market,
         'suggested_price': suggestedPrice,
         'suggested_offer': suggestedOffer,
-        'image_url': imageUrl, // NEW: Store in DB
+        'image_url': imageUrl,
         'user_id': userId,
+        'message': note ?? '',
+        'project_id': 'comprabien',
         'metadata': {
+            'username': userName ?? 'Anónimo',
             'device': deviceInfo,
             'original_name': originalName ?? 'unknown',
             'platform': kIsWeb ? 'web' : (Platform.isAndroid ? 'android' : 'ios'),
-        },
-        'project_id': 'comprabien', // NEW: Multi-tenancy
-      });
+            'message': note ?? '',
+        }
+      };
+
+      print('DEBUG: Enviando a reports -> $insertData');
+      
+      final response = await Supabase.instance.client.from(_reportsTable).insert(insertData).select();
+      
+      print('DEBUG: Respuesta de Supabase -> $response');
 
       // Update timestamp on success
       await prefs.setInt(_lastReportKey, DateTime.now().millisecondsSinceEpoch);
       return true;
 
     } catch (e) {
-      print('Error submitting report to Supabase: $e');
+      print('CRITICAL: Fallo al insertar en REPORTS -> $e');
       return false;
     }
   }
@@ -204,8 +222,7 @@ class CorrectionService {
         final response = await Supabase.instance.client
             .from('pending_voted_reports') 
             .select()
-            .eq('ean', ean)
-            .neq('user_id', userId); // Don't show my own reports to me
+            .eq('ean', ean);
 
         return List<Map<String, dynamic>>.from(response);
      } catch (e) {

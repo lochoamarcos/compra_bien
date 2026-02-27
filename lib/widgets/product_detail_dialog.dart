@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
@@ -14,6 +15,7 @@ import '../providers/report_provider.dart';
 import '../services/report_service.dart';
 import '../services/correction_service.dart';
 import '../utils/string_extensions.dart';
+import 'product_report_history_modal.dart';
 
 class ProductDetailDialog extends StatefulWidget {
   final String title;
@@ -21,7 +23,7 @@ class ProductDetailDialog extends StatefulWidget {
   final String? imageUrl;
   final List<Map<String, Object>> products;
   final String? initialSelectedMarketName;
-  final ComparisonResult result;
+  final ProductComparisonResult result;
 
   const ProductDetailDialog({
     Key? key,
@@ -57,8 +59,12 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
   final ImagePicker _picker = ImagePicker();
 
   // Multi-Report Note State
+  final TextEditingController _userNameController = TextEditingController();
+  final TextEditingController _correctionNoteController = TextEditingController(); // NEW
   final TextEditingController _reportNoteController = TextEditingController();
   bool _isNoteExpanded = false;
+  bool _isSendingReport = false; // Loading state for immediate submission
+  String? _currentUserId;
 
   @override
   void initState() {
@@ -68,9 +74,34 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
         widget.products.any((p) => (p['style'] as MarketStyle).name == widget.initialSelectedMarketName)) {
       _selectedMarketName = widget.initialSelectedMarketName!;
     } else {
-      _selectedMarketName = (widget.products.first['style'] as MarketStyle).name;
+      _selectedMarketName = (widget.products.isNotEmpty ? (widget.products.first['style'] as MarketStyle).name : 'Monarca');
     }
     _fetchSocialReports();
+    _loadSavedName();
+    _loadUserId();
+  }
+
+  Future<void> _loadUserId() async {
+     final id = await CorrectionService.getUniqueUserId();
+     if (mounted) setState(() => _currentUserId = id);
+  }
+
+  @override
+  void dispose() {
+    _userNameController.dispose();
+    _correctionNoteController.dispose();
+    _manualSearchController.dispose();
+    _correctionPriceController.dispose();
+    _correctionOfferController.dispose();
+    _reportNoteController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadSavedName() async {
+     final prefs = await SharedPreferences.getInstance();
+     setState(() {
+        _userNameController.text = prefs.getString('last_report_name') ?? '';
+     });
   }
 
   Future<void> _fetchSocialReports() async {
@@ -88,7 +119,7 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
   String _getSpecialOfferText(String? description) {
      if (description == null || description.isEmpty) return '';
      final lower = description.toLowerCase();
-     // Detect "2da al X", "3x2", "4x3", "llévate la segunda"
+     // Detect "2da al X", "3x2", "4x3", "llÃ©vate la segunda"
      if (lower.contains(RegExp(r'\b(2da|3ra|4ta|segunda|tercera|cuarta|3x2|4x3|2x1)\b'))) {
         return description; // Return full description or shortened version? Return full for now.
      }
@@ -164,27 +195,46 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                               Text(
-                                 selectedProd.name.toTitleCase(), 
-                                 style: TextStyle(
-                                   fontSize: 18, 
-                                   fontWeight: FontWeight.bold,
-                                   color: Theme.of(context).brightness == Brightness.dark ? Colors.white70 : Colors.black87
-                                 )
-                               ),
-                               if (selectedProd.promoDescription != null && selectedProd.promoDescription!.isNotEmpty)
-                                  Container(
-                                     margin: const EdgeInsets.only(top: 4),
-                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                     decoration: BoxDecoration(
-                                        color: const Color(0xFFFF5722),
-                                        borderRadius: BorderRadius.circular(8),
-                                     ),
+                               Row(
+                                 children: [
+                                   Flexible(
                                      child: Text(
-                                        selectedProd.promoDescription!,
-                                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                                       selectedProd.name.toTitleCase(), 
+                                       style: TextStyle(
+                                         fontSize: 18, 
+                                         fontWeight: FontWeight.bold,
+                                         color: Theme.of(context).brightness == Brightness.dark ? Colors.white70 : Colors.black87
+                                       )
                                      ),
-                                  ),
+                                   ),
+                                   // SOCIAL INDICATOR clickable "!"
+                                   Consumer<ProductProvider>(
+                                     builder: (context, prodProvider, child) {
+                                       if (!prodProvider.hasAnyReport(widget.result.ean)) return const SizedBox.shrink();
+                                       return IconButton(
+                                         padding: EdgeInsets.zero,
+                                         constraints: const BoxConstraints(),
+                                         icon: const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 22),
+                                         onPressed: () {
+                                            final ean = widget.result.ean;
+                                            if (ean.isEmpty) return;
+                                            final rps = prodProvider.productReports[ean] ?? [];
+                                            showModalBottomSheet(
+                                              context: context,
+                                              isScrollControlled: true,
+                                              backgroundColor: Colors.transparent,
+                                              builder: (ctx) => ProductReportHistoryModal(
+                                                productName: widget.result.name,
+                                                reports: rps,
+                                              ),
+                                            );
+                                         },
+                                         tooltip: 'Ver historial de reportes',
+                                       );
+                                     }
+                                   ),
+                                 ],
+                               ),
                                const SizedBox(height: 4),
                                if (selectedProd.brand != null)
                                  Text('Marca: ${selectedProd.brand!.toTitleCase()}', style: const TextStyle(fontSize: 14, color: Colors.grey)),
@@ -198,14 +248,6 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
                              Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                   if (_pendingReports.isNotEmpty)
-                                      Padding(
-                                         padding: const EdgeInsets.only(right: 4.0),
-                                         child: Tooltip(
-                                            message: 'Hay reportes de la comunidad',
-                                            child: Icon(Icons.warning_amber_rounded, size: 20, color: Colors.orange),
-                                         ),
-                                      ),
                                    Text(
                                       NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 0).format(selectedProd.price),
                                       style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: selectedStyle.primaryColor),
@@ -319,18 +361,37 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
               backgroundColor: style.primaryColor, 
               child: Text(style.name[0], style: const TextStyle(color: Colors.white, fontSize: 10))
             ),
-            label: Text(labelText, style: TextStyle(
-              color: isDark 
-                  ? Colors.white70 
-                  : (isSelected ? style.primaryColor : Colors.black87),
-              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-            )),
+            label: Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text(
+                  labelText, 
+                  style: TextStyle(
+                    color: isDark 
+                        ? Colors.white70 
+                        : (isSelected ? style.primaryColor : Colors.black87),
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  ),
+                ),
+                Consumer<ProductProvider>(
+                  builder: (context, prodProvider, child) {
+                    if (prodProvider.hasReportForMarket(widget.result.ean, style.name)) {
+                      return const Padding(
+                        padding: EdgeInsets.only(left: 4),
+                        child: Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 14),
+                      );
+                    }
+                    return const SizedBox.shrink();
+                  },
+                ),
+              ],
+            ),
             backgroundColor: isSelected 
                 ? (isDark ? const Color(0xFF00ACC1).withOpacity(0.25) : style.primaryColor.withOpacity(0.15)) 
                 : (isDark ? const Color(0xFF37474F) : style.primaryColor.withOpacity(0.05)),
             side: BorderSide(
-              color: isSelected ? style.primaryColor : (isDark ? Colors.white10 : Colors.transparent), 
-              width: isSelected ? 2 : 1
+              color: isSelected ? style.primaryColor : (isDark ? Colors.white12 : Colors.black.withOpacity(0.05)), 
+              width: 2
             ),
           );
       }).toList(),
@@ -505,7 +566,7 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
       Provider.of<ProductProvider>(context, listen: false).manualLinkProduct(widget.result, marketName, matchedProduct);
 
       if (mounted) {
-         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('¡Vinculado! Se envió el reporte para validación.')));
+         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Â¡Vinculado! Se enviÃ³ el reporte para validaciÃ³n.')));
          setState(() => _searchingMarket = null);
          // Force redraw of parents if needed by popping or setState? 
          // The Provider notifyListeners should handle it, but this Dialog uses `widget.products` which is passed in.
@@ -526,7 +587,7 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
                   "Matched Price: ${matchedProduct.price}\n"
                   "Matched EAN: ${matchedProduct.ean}"; 
       
-      await ReportService.submitReport("Vinculación Manual", msg);
+      await ReportService.submitReport("VinculaciÃ³n Manual", msg);
   }
 
   Widget _buildReportSection(BuildContext context, Product selectedProd) {
@@ -534,7 +595,7 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
          return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-               Text('Sugerir Corrección ($_selectedMarketName)', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+               Text('Sugerir CorrecciÃ³n ($_selectedMarketName)', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                const SizedBox(height: 12),
                TextField(
                   controller: _correctionPriceController,
@@ -542,10 +603,21 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
                   keyboardType: TextInputType.number,
                ),
                const SizedBox(height: 8),
-               TextField(
-                  controller: _correctionOfferController,
-                  decoration: const InputDecoration(labelText: 'Oferta (ej: 2da al 50%, 3x2)'),
-               ),
+                TextField(
+                   controller: _correctionOfferController,
+                   decoration: const InputDecoration(labelText: 'Oferta (ej: 2da al 50%, 3x2)'),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                   controller: _userNameController,
+                   decoration: const InputDecoration(labelText: 'Tu Nombre (Opcional)'),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                   controller: _correctionNoteController,
+                   decoration: const InputDecoration(labelText: 'Nota/Mensaje Suplementario'),
+                   maxLines: 2,
+                ),
                const SizedBox(height: 12),
                Row(
                   children: [
@@ -624,20 +696,63 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
                                     padding: const EdgeInsets.all(8.0),
                                     child: Column(
                                       children: [
-                                        ElevatedButton(
-                                            onPressed: () {
-                                              reportProvider.addItem(
-                                                widget.result, 
-                                                _selectedBadMarkets.toSet(),
-                                                note: _reportNoteController.text.isNotEmpty ? _reportNoteController.text : null,
-                                              );
-                                              // Clear note after adding if desired, or keep it. 
-                                              // Let's clear to avoid confusion if they report another thing.
-                                              _reportNoteController.clear();
-                                              setState(() => _isNoteExpanded = false);
-                                            },
-                                            child: const Text('Reportar Selección')
-                                        ),
+                                        _isSendingReport 
+                                          ? const Padding(
+                                              padding: EdgeInsets.all(8.0),
+                                              child: CircularProgressIndicator(strokeWidth: 2),
+                                            )
+                                          : ElevatedButton(
+                                              onPressed: () async {
+                                                if (_selectedBadMarkets.isEmpty) return;
+                                                
+                                                setState(() => _isSendingReport = true);
+                                                
+                                                final markets = _selectedBadMarkets.toList().join(", ");
+                                                final note = _reportNoteController.text.trim();
+                                                
+                                                final success = await CorrectionService.submitReport(
+                                                  ean: widget.result.ean,
+                                                  market: markets,
+                                                  originalName: widget.result.name,
+                                                  note: note.isNotEmpty ? note : "Reporte de error",
+                                                  ignoreCooldown: true, // Allow multiple for this flow
+                                                );
+
+                                                if (success) {
+                                                  // Clear local state
+                                                  setState(() {
+                                                    _selectedBadMarkets.clear();
+                                                    _reportNoteController.clear();
+                                                    _isNoteExpanded = false;
+                                                    _isSendingReport = false;
+                                                  });
+                                                  
+                                                  // Remove from global "Pending" list if it was there
+                                                  if (context.mounted) {
+                                                    Provider.of<ReportProvider>(context, listen: false).removeItem(widget.result);
+                                                    Provider.of<ProductProvider>(context, listen: false).loadActiveReports(); // Refresh markers
+                                                    
+                                                    ScaffoldMessenger.of(context).showSnackBar(
+                                                      const SnackBar(
+                                                        content: Text('Reporte enviado con éxito'),
+                                                        backgroundColor: Colors.green,
+                                                      ),
+                                                    );
+                                                  }
+                                                } else {
+                                                  setState(() => _isSendingReport = false);
+                                                  if (context.mounted) {
+                                                    ScaffoldMessenger.of(context).showSnackBar(
+                                                      const SnackBar(
+                                                        content: Text('Error al enviar. Se intentará luego.'),
+                                                        backgroundColor: Colors.orange,
+                                                      ),
+                                                    );
+                                                  }
+                                                }
+                                              },
+                                              child: const Text('Reportar Selección')
+                                          ),
                                         const SizedBox(height: 8),
                                         InkWell(
                                           onTap: () => setState(() => _isNoteExpanded = !_isNoteExpanded),
@@ -667,7 +782,7 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
                                                 maxLines: 2,
                                                 style: const TextStyle(fontSize: 12),
                                                 decoration: InputDecoration(
-                                                  hintText: 'Escribí tu mensaje aquí...',
+                                                   hintText: 'Escribí tu mensaje aquí...',
                                                   contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                                                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                                                   isDense: true,
@@ -748,7 +863,7 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
                     context: context,
                     builder: (ctx) => AlertDialog(
                        title: const Text('Imagen Inapropiada'),
-                       content: const Text('Nuestro sistema detectó que la imagen podría ser inapropiada. Por favor, subí una foto clara del producto/precio.'),
+                       content: const Text('Nuestro sistema detectÃ³ que la imagen podrÃ­a ser inapropiada. Por favor, subÃ­ una foto clara del producto/precio.'),
                        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Entendido'))],
                     )
                  );
@@ -763,21 +878,30 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
         }
      }
 
-     // 3. Final Submit
-     bool success = await CorrectionService.submitReport(
-        ean: product.ean.isNotEmpty ? product.ean : 'NO-EAN',
-        market: _selectedMarketName,
-        suggestedPrice: suggestedPrice,
-        suggestedOffer: suggestedOffer.isNotEmpty ? suggestedOffer : null,
-        originalName: product.name,
-        imageUrl: uploadedUrl, // PASS THE URL
-     );
+      // 3. Final Submit
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('last_report_name', _userNameController.text.trim());
+
+      bool success = await CorrectionService.submitReport(
+         ean: product.ean.isNotEmpty ? product.ean : 'NO-EAN',
+         market: _selectedMarketName,
+         suggestedPrice: suggestedPrice,
+         suggestedOffer: suggestedOffer.isNotEmpty ? suggestedOffer : null,
+         originalName: product.name,
+         imageUrl: uploadedUrl, 
+         userName: _userNameController.text.trim().isNotEmpty ? _userNameController.text.trim() : null,
+         note: _correctionNoteController.text.trim().isNotEmpty ? _correctionNoteController.text.trim() : null,
+      );
 
      if (mounted) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
         if (success) {
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('¡Gracias! Tu reporte fue subido con éxito.')));
-            setState(() { _showCorrectionForm = false; _correctionImage = null; });
+            setState(() { 
+               _showCorrectionForm = false; 
+               _correctionImage = null; 
+               _correctionNoteController.clear();
+            });
         } else {
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Por favor esperá unos minutos antes de enviar otro reporte.')));
         }
@@ -785,6 +909,9 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
   }
 
   Widget _buildSocialVotingCard() {
+     final filteredReports = _pendingReports.where((r) => r['market'] == _selectedMarketName).toList();
+     if (filteredReports.isEmpty) return const SizedBox.shrink();
+
      return Container(
         margin: const EdgeInsets.symmetric(vertical: 8),
         padding: const EdgeInsets.all(12),
@@ -802,28 +929,56 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
                     const SizedBox(width: 8),
                     const Text('Aporte de la Comunidad', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue)),
                     const Spacer(),
-                    Text('${_pendingReports.length} reporte(s)', style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                    Text('${filteredReports.length} reporte(s)', style: const TextStyle(fontSize: 10, color: Colors.grey)),
                  ],
               ),
               const SizedBox(height: 8),
-              ..._pendingReports.map((report) {
-                 final price = report['suggested_price'];
-                 final offer = report['suggested_offer'];
-                 final img = report['image_url'];
-                 
-                 return Column(
-                    children: [
-                       const Divider(height: 16),
-                       Row(
-                          children: [
-                             Expanded(
-                                child: Column(
-                                   crossAxisAlignment: CrossAxisAlignment.start,
-                                   children: [
-                                      Text('Dicen que está a: \$${price ?? "N/A"}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                                      if (offer != null) Text('Oferta: $offer', style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                                   ],
-                                ),
+              ...filteredReports.map((report) {
+                  final price = report['suggested_price'];
+                  final offer = report['suggested_offer'];
+                  final img = report['image_url'];
+                  final reportUserId = report['user_id']?.toString();
+                  final isOwnReport = _currentUserId != null && reportUserId == _currentUserId;
+                  
+                  // Price validity check
+                  final displayPrice = (price == null || price.toString() == '0' || price.toString().toLowerCase() == 'n/a' || price.toString().isEmpty) 
+                      ? null 
+                      : '\$$price';
+
+                  return Column(
+                     children: [
+                        const Divider(height: 16),
+                        Row(
+                           children: [
+                              Expanded(
+                                 child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                       if (displayPrice != null)
+                                          Text('Dicen que está a: $displayPrice', style: const TextStyle(fontWeight: FontWeight.bold)),
+                                       
+                                       // Priority to message if no price, or just show it below if price exists
+                                       if (report['message'] != null && report['message'].toString().isNotEmpty && report['message'].toString() != 'Reporte de error')
+                                          Padding(
+                                            padding: const EdgeInsets.only(top: 2.0),
+                                            child: Text(report['message'].toString(), style: TextStyle(fontSize: 12, color: Colors.blue.withOpacity(0.8), fontStyle: FontStyle.italic)),
+                                          )
+                                       else if (report['metadata'] is Map && report['metadata']['message'] != null && report['metadata']['message'].toString().isNotEmpty && report['metadata']['message'].toString() != 'Reporte de error')
+                                          Padding(
+                                            padding: const EdgeInsets.only(top: 2.0),
+                                            child: Text(report['metadata']['message'].toString(), style: TextStyle(fontSize: 12, color: Colors.blue.withOpacity(0.8), fontStyle: FontStyle.italic)),
+                                          ),
+                                       
+                                       if (offer != null && offer.toString().isNotEmpty) 
+                                          Text('Oferta: $offer', style: const TextStyle(fontSize: 11, color: Colors.blue, fontWeight: FontWeight.bold)),
+                                       
+                                       const SizedBox(height: 2),
+                                       Text(
+                                          'Publicado por: ${isOwnReport ? "Mí (Yo)" : ((report['metadata'] is Map ? report['metadata']['username'] : null) ?? 'Anónimo')}',
+                                          style: TextStyle(fontSize: 10, fontStyle: FontStyle.italic, color: Colors.grey[600]),
+                                       ),
+                                    ],
+                                 ),
                              ),
                              if (img != null)
                                 GestureDetector(
@@ -838,15 +993,15 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
                                       ),
                                    ),
                                 ),
-                             const SizedBox(width: 8),
-                             IconButton(
-                                icon: const Icon(Icons.thumb_up_alt_outlined, color: Colors.green),
-                                onPressed: () => _handleVote(report['id'], true),
-                             ),
-                             IconButton(
-                                icon: const Icon(Icons.thumb_down_alt_outlined, color: Colors.red),
-                                onPressed: () => _handleVote(report['id'], false),
-                             ),
+                              const SizedBox(width: 8),
+                              IconButton(
+                                 icon: Icon(isOwnReport ? Icons.thumb_up_alt : Icons.thumb_up_alt_outlined, color: Colors.green),
+                                 onPressed: isOwnReport ? null : () => _handleVote(report['id'], true),
+                              ),
+                              IconButton(
+                                 icon: const Icon(Icons.thumb_down_alt_outlined, color: Colors.red),
+                                 onPressed: isOwnReport ? null : () => _handleVote(report['id'], false),
+                              ),
                           ],
                        ),
                     ],
@@ -860,7 +1015,7 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
   Future<void> _handleVote(String reportId, bool isUpvote) async {
      final ok = await CorrectionService.voteReport(reportId, isUpvote);
      if (ok && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('¡Voto registrado! Gracias.')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Â¡Voto registrado! Gracias.')));
         _fetchSocialReports(); // Refresh
      }
   }
@@ -890,8 +1045,8 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
                            showDialog(
                               context: context,
                               builder: (ctx) => AlertDialog(
-                                 title: const Text('¿Reportar error en la foto/producto?'),
-                                 content: const Text('¿Esta foto no corresponde al producto o el precio es muy diferente (ej: unidad vs pack)?'),
+                                 title: const Text('Â¿Reportar error en la foto/producto?'),
+                                 content: const Text('Â¿Esta foto no corresponde al producto o el precio es muy diferente (ej: unidad vs pack)?'),
                                  actions: [
                                     TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
                                     ElevatedButton(
@@ -908,9 +1063,9 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
                                           // But this preview might come from Search Result (Thumbnail) which passes just URL.
                                           // Let's defer this logic or assume Generic Report.
                                           
-                                          await ReportService.submitReport("Error Foto/Vinculación", "El usuario reportó que la imagen/producto vinculado es incorrecto.\nURL: $url");
+                                          await ReportService.submitReport("Error Foto/VinculaciÃ³n", "El usuario reportÃ³ que la imagen/producto vinculado es incorrecto.\nURL: $url");
                                           
-                                          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Gracias. Revisaremos este vínculo.')));
+                                          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Gracias. Revisaremos este vÃ­nculo.')));
                                        }, 
                                        child: const Text('Si, Reportar')
                                     )

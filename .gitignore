@@ -12,32 +12,52 @@
 .swiftpm/
 migrate_working_dir/
 
+# Log files and crash reports
+analysis_full.txt
+analysis_output.txt
+analyze_output.txt
+build_errors_exact.txt
+build_fail.txt
+build_final.txt
+build_output.txt
+build_root_cause.txt
+build_tail.txt
+clean_errors.txt
+debug_analyze.txt
+fresh_errors.txt
+fresh_errors_2.txt
+fresh_errors_3.txt
+gradle_error.txt
+home_screen_errors.txt
+lints.txt
+matching_analysis_results.txt
+top_50_errors.txt
+final_scan.txt
+flutter_01.log
+hs_err_pid*.log
+
+# Web/HTML debug
+debug_coope_direct.html
+
 # IntelliJ related
 *.iml
 *.ipr
 *.iws
 .idea/
 
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
-
 # Flutter/Dart/Pub related
 **/doc/api/
 **/ios/Flutter/.last_build_id
-.dart_tool/
-.flutter-plugins-dependencies
-.pub-cache/
-.pub/
-/build/
-/coverage/
 .dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
 .pub-cache/
 .pub/
 build/
+
+# Windows related
+windows/flutter/ephemeral/
+
 # Symbolication related
 app.*.symbols
 
@@ -61,4 +81,3 @@ app.*.map.json
 # VS Code y OS
 .vscode/
 .DS_Store
-*.log

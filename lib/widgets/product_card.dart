@@ -7,15 +7,18 @@ import 'product_detail_dialog.dart';
 import '../screens/cart_screen.dart';
 
 import '../models/product.dart';
+import '../models/cart_item.dart';
 import '../utils/market_branding.dart';
 import '../providers/cart_provider.dart';
 import '../providers/product_provider.dart';
 import '../providers/report_provider.dart';
 import 'loading_dots.dart';
 import '../utils/string_extensions.dart';
+import 'lottie_add_to_cart_button.dart';
+import 'product_report_history_modal.dart';
 
 class ProductCard extends StatefulWidget {
-  final ComparisonResult result;
+  final ProductComparisonResult result;
   final bool isHorizontal;
   final Set<String> activeMarkets;
 
@@ -47,7 +50,10 @@ class _ProductCardState extends State<ProductCard> {
     final products = _getAvailableProducts();
     if (products.isNotEmpty) {
       products.sort((a, b) => (a['price'] as double).compareTo(b['price'] as double));
-      _selectedMarketName = (products.first['style'] as MarketStyle).name;
+      final firstStyle = products.first['style'];
+      if (firstStyle is MarketStyle) {
+        _selectedMarketName = firstStyle.name;
+      }
     }
   }
 
@@ -99,12 +105,17 @@ class _ProductCardState extends State<ProductCard> {
     );
 
     final displayProduct = selectedProductMap['prod'] as Product;
-    final title = displayProduct.name.toTitleCase();
+    
+    String title = displayProduct.name.toTitleCase();
+    if (displayProduct.presentation.isNotEmpty && !title.toLowerCase().contains(displayProduct.presentation.toLowerCase())) {
+        title = '$title ${displayProduct.presentation.toTitleCase()}';
+    }
+    
     final subtitle = (displayProduct.brand ?? '').toTitleCase();
     final imageUrl = displayProduct.imageUrl;
 
     if (widget.isHorizontal) {
-      return _buildHorizontalLayout(context, availableProducts, bestOption, bestMarketName, selectedProductMap);
+      return _buildHorizontalLayout(context, availableProducts, bestOption, bestMarketName, selectedProductMap, title);
     }
 
     // Vertical Layout
@@ -146,49 +157,21 @@ class _ProductCardState extends State<ProductCard> {
               Consumer<CartProvider>(
                  builder: (context, cart, child) {
                    final productToAdd = selectedProductMap['prod'] as Product;
-                   final cartItemIndex = cart.items.indexWhere((item) => 
-                     ((item.product.ean.isNotEmpty && item.product.ean == productToAdd.ean) || (item.product.name == productToAdd.name)) && 
+                   final cartItemIndex = cart.items.indexWhere((CartItem item) => 
+                     ((item.product.ean.isNotEmpty && item.product.ean != '0' && item.product.ean == productToAdd.ean) || 
+                      (item.product.name == productToAdd.name && item.product.presentation == productToAdd.presentation)) && 
                      item.product.source == productToAdd.source
                    );
                    final isInCart = cartItemIndex >= 0;
                    final quantity = isInCart ? cart.items[cartItemIndex].quantity : 0;
 
-                   return Container(
-                     width: 48,
-                     decoration: BoxDecoration(
-                       color: isInCart ? const Color(0xFF00ACC1).withOpacity(0.1) : const Color(0xFF00ACC1),
-                       borderRadius: BorderRadius.circular(16),
-                       border: isInCart ? Border.all(color: const Color(0xFF00ACC1)) : null,
-                       boxShadow: isInCart ? [] : [
-                         BoxShadow(color: const Color(0xFF00ACC1).withOpacity(0.4), blurRadius: 8, offset: const Offset(0, 4))
-                       ],
-                     ),
-                     child: Column(
-                       mainAxisSize: MainAxisSize.min,
-                       children: [
-                         if (!isInCart)
-                            IconButton(
-                              icon: const Icon(Icons.add, color: Colors.white, size: 28),
-                              onPressed: () => cart.addItem(productToAdd, bestMarket: bestMarketName, bestPrice: (bestOption['prod'] as Product).price),
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                            )
-                         else ...[
-                            IconButton(
-                              icon: const Icon(Icons.add, size: 20, color: Color(0xFF00ACC1)),
-                              onPressed: () => cart.addItem(productToAdd, bestMarket: bestMarketName, bestPrice: (bestOption['prod'] as Product).price),
-                              padding: const EdgeInsets.all(4),
-                              constraints: const BoxConstraints(),
-                            ),
-                            Text('$quantity', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF00ACC1))),
-                            IconButton(
-                              icon: const Icon(Icons.remove, size: 20, color: Color(0xFF00ACC1)),
-                              onPressed: () => cart.removeSingleItem(cart.items[cartItemIndex]),
-                              padding: const EdgeInsets.all(4),
-                              constraints: const BoxConstraints(),
-                            ),
-                         ],
-                       ],
-                     ),
+                   return LottieAddToCartButton(
+                     size: 48,
+                     isInCart: isInCart,
+                     quantity: quantity,
+                     onTap: () => cart.addItem(productToAdd, bestMarket: bestMarketName, bestPrice: (bestOption['prod'] as Product).price, alternatives: availableProducts.map((opt) => opt['prod'] as Product).toList()),
+                     onIncrement: () => cart.addItem(productToAdd, bestMarket: bestMarketName, bestPrice: (bestOption['prod'] as Product).price, alternatives: availableProducts.map((opt) => opt['prod'] as Product).toList()),
+                     onDecrement: isInCart ? () => cart.removeSingleItem(cart.items[cartItemIndex]) : null,
                    );
                  }
               ),
@@ -231,14 +214,14 @@ class _ProductCardState extends State<ProductCard> {
   }
 
   // --- Horizontal Layout (Refined) ---
-  Widget _buildHorizontalLayout(BuildContext context, List<Map<String, Object>> availableProducts, Map<String, Object> bestOption, String bestMarketName, Map<String, Object> selectedProductMap) {
+  Widget _buildHorizontalLayout(BuildContext context, List<Map<String, Object>> availableProducts, Map<String, Object> bestOption, String bestMarketName, Map<String, Object> selectedProductMap, String title) {
       final displayProduct = selectedProductMap['prod'] as Product;
       
       return Container(
         margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
         decoration: BoxDecoration(
           color: Theme.of(context).cardColor,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(24),
           boxShadow: [
              BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 4))
           ]
@@ -250,18 +233,20 @@ class _ProductCardState extends State<ProductCard> {
                 onTap: () => _showProductDetail(context, displayProduct.name, displayProduct.brand ?? '', displayProduct.imageUrl, availableProducts, _selectedMarketName),
                 child: Container(
                   width: 100,
-                  height: 150, // Fixed height for image area
+                  height: 130, // Reduced height
                   decoration: const BoxDecoration(
                      color: Colors.white,
-                     borderRadius: BorderRadius.horizontal(left: Radius.circular(16))
+                     borderRadius: BorderRadius.horizontal(left: Radius.circular(24))
                   ),
                   child: Stack(
                     children: [
-                      CachedNetworkImage(
-                         imageUrl: displayProduct.imageUrl ?? '',
-                         fit: BoxFit.contain,
-                         placeholder: (_, __) => const Center(child: LoadingDots()),
-                         errorWidget: (_,__,___) => const Icon(Icons.image_not_supported, color: Colors.grey)
+                      Center( // Center the image vertically/horizontally
+                        child: CachedNetworkImage(
+                           imageUrl: displayProduct.imageUrl ?? '',
+                           fit: BoxFit.contain,
+                           placeholder: (_, __) => const Center(child: LoadingDots()),
+                           errorWidget: (_,__,___) => const Icon(Icons.image_not_supported, color: Colors.grey)
+                        ),
                       ),
                       if (displayProduct.promoDescription != null && displayProduct.promoDescription!.isNotEmpty)
                         Positioned(
@@ -282,11 +267,39 @@ class _ProductCardState extends State<ProductCard> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                         Text(
-                            displayProduct.name.toTitleCase(), 
-                            maxLines: 1, // Reduced to 1 to save space for grid
-                            overflow: TextOverflow.ellipsis, 
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)
+                         Row(
+                            children: [
+                               Expanded(
+                                  child: Text(
+                                     title, 
+                                     maxLines: 1, 
+                                     overflow: TextOverflow.ellipsis, 
+                                     style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)
+                                  ),
+                               ),
+                               Consumer<ProductProvider>(
+                                  builder: (context, prodProvider, child) {
+                                    if (!prodProvider.hasAnyReport(widget.result.ean)) return const SizedBox.shrink();
+                                    return IconButton(
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                      icon: const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 24),
+                                      onPressed: () {
+                                         final rps = prodProvider.productReports[widget.result.ean] ?? [];
+                                         showModalBottomSheet(
+                                           context: context,
+                                           isScrollControlled: true,
+                                           backgroundColor: Colors.transparent,
+                                           builder: (ctx) => ProductReportHistoryModal(
+                                             productName: widget.result.name,
+                                             reports: rps,
+                                           ),
+                                         );
+                                      },
+                                    );
+                                  }
+                               ),
+                            ],
                          ),
                          if (displayProduct.brand != null)
                              Text(displayProduct.brand!.toTitleCase(), style: TextStyle(fontSize: 11, color: Colors.grey[600])),
@@ -308,23 +321,24 @@ class _ProductCardState extends State<ProductCard> {
                        final productToAdd = selectedProductMap['prod'] as Product;
                        final bestProd = bestOption['prod'] as Product;
                        
-                       final cartItemIndex = cart.items.indexWhere((item) => 
-                           ((item.product.ean.isNotEmpty && item.product.ean == productToAdd.ean) || (item.product.name == productToAdd.name)) && 
+                       final cartItemIndex = cart.items.indexWhere((CartItem item) => 
+                           ((item.product.ean.isNotEmpty && item.product.ean != '0' && item.product.ean == productToAdd.ean) || 
+                            (item.product.name == productToAdd.name && item.product.presentation == productToAdd.presentation)) && 
                            item.product.source == productToAdd.source
                        );
                        final isInCart = cartItemIndex >= 0;
                        
-                       return IconButton(
-                          icon: Icon(
-                             isInCart ? Icons.check_circle : Icons.add_circle, 
-                             color: isInCart ? Colors.green : const Color(0xFF00ACC1),
-                             size: 32
-                          ),
-                          onPressed: () {
+                       return LottieAddToCartButton(
+                          size: 32,
+                          isInCart: isInCart,
+                          quantity: isInCart ? cart.items[cartItemIndex].quantity : 0,
+                          onTap: () {
                              if (!isInCart) {
-                                cart.addItem(productToAdd, bestMarket: bestMarketName, bestPrice: bestProd.price);
+                                cart.addItem(productToAdd, bestMarket: bestMarketName, bestPrice: bestProd.price, alternatives: availableProducts.map((opt) => opt['prod'] as Product).toList());
                              }
-                          }
+                          },
+                          onIncrement: () => cart.addItem(productToAdd, bestMarket: bestMarketName, bestPrice: bestProd.price, alternatives: availableProducts.map((opt) => opt['prod'] as Product).toList()),
+                          onDecrement: isInCart ? () => cart.removeSingleItem(cart.items[cartItemIndex]) : null,
                        );
                    }
                 )
@@ -339,11 +353,13 @@ class _ProductCardState extends State<ProductCard> {
     final isSelected = style.name == _selectedMarketName;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     
+    final bool hasDiscount = (product.promoDescription != null && product.promoDescription!.isNotEmpty) || 
+                             (product.oldPrice != null && product.oldPrice! > product.price);
+
     return GestureDetector(
       onTap: () => setState(() => _selectedMarketName = style.name),
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 2),
-        padding: EdgeInsets.symmetric(vertical: compact ? 4 : 8, horizontal: 4),
         decoration: BoxDecoration(
           color: isSelected 
               ? (isDark ? const Color(0xFF00ACC1).withOpacity(0.2) : style.primaryColor.withOpacity(0.15))
@@ -351,28 +367,98 @@ class _ProductCardState extends State<ProductCard> {
           borderRadius: BorderRadius.circular(compact ? 8 : 12),
           border: isSelected 
               ? Border.all(color: style.primaryColor, width: 2)
-              : (isBest ? Border.all(color: const Color(0xFF00C853), width: 2) : null),
+              : (isBest ? Border.all(color: const Color(0xFF00C853), width: 2) : Border.all(color: Colors.transparent, width: 2)),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
           children: [
-            Text(style.name, style: TextStyle(
-              fontSize: compact ? 9 : 10, 
-              fontWeight: FontWeight.bold, 
-              color: isDark ? Colors.white54 : (isSelected ? style.primaryColor : const Color(0xFF9E9E9E))
-            )),
-            if (!compact) const SizedBox(height: 2),
-            FittedBox(
-              child: Text(
-                NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 0).format(product.price),
-                style: TextStyle(
-                  fontWeight: FontWeight.w900, 
-                  fontSize: compact ? 13 : 15, 
-                  color: isSelected ? style.primaryColor : (isBest ? (isDark ? Colors.white : const Color(0xFF212121)) : (isDark ? Colors.white60 : const Color(0xFF757575)))
-                ),
+            Padding(
+              padding: EdgeInsets.symmetric(vertical: compact ? 4 : 8, horizontal: 4),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(style.name, style: TextStyle(
+                        fontSize: compact ? 9 : 10, 
+                        fontWeight: FontWeight.bold, 
+                        color: isSelected 
+                          ? (isDark 
+                              ? (style.name == 'Monarca' ? const Color(0xFFFF600C) : (style.name == 'Carrefour' ? const Color(0xFFFF3E2F) : style.primaryColor))
+                              : style.primaryColor)
+                          : (isDark ? Colors.white54 : const Color(0xFF9E9E9E))
+                      )),
+                      Consumer<ProductProvider>(
+                        builder: (context, prodProvider, child) {
+                          if (prodProvider.hasReportForMarket(widget.result.ean, style.name)) {
+                            return Padding(
+                              padding: const EdgeInsets.only(left: 2),
+                              child: Icon(Icons.warning_amber_rounded, color: Colors.orange, size: compact ? 8 : 10),
+                            );
+                          }
+                          return const SizedBox.shrink();
+                        },
+                      ),
+                    ],
+                  ),
+                  if (!compact) const SizedBox(height: 2),
+                  FittedBox(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          NumberFormat.currency(locale: 'es_AR', symbol: '\$', decimalDigits: 0).format(product.price),
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900, 
+                            fontSize: compact ? 13 : 15, 
+                            color: isSelected 
+                              ? (isDark 
+                                  ? (style.name == 'Monarca' ? const Color(0xFFFF600C) : (style.name == 'Carrefour' ? const Color(0xFFFF3E2F) : style.primaryColor))
+                                  : style.primaryColor)
+                              : (isBest ? (isDark ? Colors.white : const Color(0xFF212121)) : (isDark ? Colors.white60 : const Color(0xFF757575)))
+                          ),
+                        ),
+                        Consumer<CartProvider>(
+                          builder: (context, cart, child) {
+                            final matchingItemIndex = cart.items.indexWhere((item) => 
+                              item.product.source == style.name && 
+                              ((item.product.ean == product.ean && product.ean.isNotEmpty && product.ean != '0') || 
+                               item.product.name == product.name)
+                            );
+                            if (matchingItemIndex == -1) return const SizedBox.shrink();
+                            final qty = cart.items[matchingItemIndex].quantity;
+                            if (qty <= 0) return const SizedBox.shrink();
+                            
+                            return Padding(
+                              padding: const EdgeInsets.only(left: 4),
+                              child: Text(
+                                ' x $qty',
+                                style: TextStyle(
+                                  fontSize: compact ? 10 : 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: isSelected ? style.primaryColor : Colors.orange[800],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  )
+                ],
               ),
-            )
-          ],
+            ),
+            if (hasDiscount)
+              Positioned(
+                top: 0,
+                right: 0,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.only(topRight: Radius.circular(compact ? 8 : 12)),
+                  child: _buildDiscountTriangle(compact: compact)
+                )
+              )
+          ]
         ),
       ),
     );
@@ -393,15 +479,44 @@ class _ProductCardState extends State<ProductCard> {
               child: Stack(
                 children: [
                   Positioned.fill(
-                    child: imageUrl != null 
-                      ? CachedNetworkImage(
-                          imageUrl: imageUrl, 
-                          fit: BoxFit.contain,
-                          placeholder: (_, __) => const Center(child: LoadingDots()),
-                          errorWidget: (_, __, ___) => const Center(child: Icon(Icons.image_not_supported, size: 40, color: Colors.grey)),
-                        )
-                      : const Center(child: Icon(Icons.image_not_supported, size: 40, color: Colors.grey)),
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      child: imageUrl != null 
+                        ? CachedNetworkImage(
+                            imageUrl: imageUrl, 
+                            fit: BoxFit.contain,
+                            fadeInDuration: const Duration(milliseconds: 200), // Fast fade to avoid jump
+                            memCacheHeight: 240, // Optimize memory
+                            placeholder: (_, __) => Container(
+                              height: 120,
+                              alignment: Alignment.center,
+                              child: const LoadingDots(),
+                            ),
+                            errorWidget: (_, __, ___) => const Center(child: Icon(Icons.image_not_supported, size: 40, color: Colors.grey)),
+                          )
+                        : const Center(child: Icon(Icons.image_not_supported, size: 40, color: Colors.grey)),
+                    ),
                   ),
+                  if ((displayProduct.promoDescription != null && displayProduct.promoDescription!.isNotEmpty) || 
+                      (displayProduct.oldPrice != null && displayProduct.oldPrice! > displayProduct.price))
+                    Positioned(
+                      top: 6, // Slightly lower for better margin
+                      right: 6,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.orange[800], // Slightly more vibrant orange
+                          borderRadius: BorderRadius.circular(6),
+                          boxShadow: [
+                            BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 4, offset: const Offset(0, 2))
+                          ],
+                        ),
+                        child: const Text(
+                          '%',
+                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                        ),
+                      ),
+                    ),
                   if (displayProduct.promoDescription != null && displayProduct.promoDescription!.isNotEmpty)
                     Positioned(
                       top: 4,
@@ -413,11 +528,39 @@ class _ProductCardState extends State<ProductCard> {
             ),
           ),
           const SizedBox(height: 12),
-          Text(title, style: TextStyle(
-            fontWeight: FontWeight.bold, 
-            fontSize: 16,
-            color: isDark ? Colors.white70 : Colors.black87
-          ), maxLines: 2, overflow: TextOverflow.ellipsis),
+          Row(
+            children: [
+              Expanded(
+                child: Text(title, style: TextStyle(
+                  fontWeight: FontWeight.bold, 
+                  fontSize: 16,
+                  color: isDark ? Colors.white70 : Colors.black87
+                ), maxLines: 2, overflow: TextOverflow.ellipsis),
+              ),
+              Consumer<ProductProvider>(
+                builder: (context, prodProvider, child) {
+                  if (!prodProvider.hasAnyReport(widget.result.ean)) return const SizedBox.shrink();
+                  return IconButton(
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    icon: const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 26),
+                    onPressed: () {
+                       final rps = prodProvider.productReports[widget.result.ean] ?? [];
+                       showModalBottomSheet(
+                         context: context,
+                         isScrollControlled: true,
+                         backgroundColor: Colors.transparent,
+                         builder: (ctx) => ProductReportHistoryModal(
+                           productName: widget.result.name,
+                           reports: rps,
+                         ),
+                       );
+                    },
+                  );
+                }
+              ),
+            ],
+          ),
           if (subtitle.isNotEmpty)
              Text(subtitle, style: TextStyle(color: Colors.grey[600], fontSize: 12)),
         ],
@@ -455,6 +598,30 @@ class _ProductCardState extends State<ProductCard> {
      );
   }
 
+  Widget _buildDiscountTriangle({bool compact = false}) {
+     final double size = compact ? 22.0 : 28.0;
+     final double fontSize = compact ? 12.0 : 15.0;
+     return ClipPath(
+       clipper: _DiagonalClipper(),
+       child: Container(
+         width: size,
+         height: size,
+         color: const Color(0xFFFF5722), // Deep Orange
+         alignment: Alignment.topRight,
+         padding: EdgeInsets.only(top: compact ? 1 : 2, right: compact ? 1 : 2),
+         child: Text(
+           '%',
+           style: TextStyle(
+             color: Colors.white, 
+             fontWeight: FontWeight.bold, // Clean 2D look
+             fontSize: fontSize,
+             height: 1.0,
+           ),
+         ),
+       ),
+     );
+  }
+
   Widget _buildPromoBadge(String promo) {
      final isCoronado = promo == "Precio Coronado";
      return Container(
@@ -472,10 +639,52 @@ class _ProductCardState extends State<ProductCard> {
         child: isCoronado 
           ? _buildCrownIcon()
           : Text(
-              promo,
+              _shortenPromoLabel(promo),
               style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10),
             ),
      );
+  }
+
+  String _shortenPromoLabel(String label) {
+    if (label.isEmpty) return label;
+    
+    String result = "";
+    
+    // 0. Priority: "Compra X" or "Lleva X" patterns
+    final buyMatch = RegExp(r'(Compra\s*\d+|Lleva\s*\d+)', caseSensitive: false).firstMatch(label);
+    if (buyMatch != null) {
+      result = buyMatch.group(1)!;
+    }
+
+    // 1. Extract Percentage (anywhere) - only if we didn't find "Compra X"
+    if (result.isEmpty) {
+      final percentageMatch = RegExp(r'(\d+%)').firstMatch(label);
+      if (percentageMatch != null) {
+        result = percentageMatch.group(1)!;
+      }
+    }
+    
+    // 2. Extract Max Units
+    final maxMatch = RegExp(r'max\s*(\d+)', caseSensitive: false).firstMatch(label);
+    if (maxMatch != null) {
+      final String maxStr = "(max ${maxMatch.group(1)}.)";
+      result = result.isEmpty ? maxStr : "$result $maxStr";
+    }
+
+    if (result.isNotEmpty) return result;
+
+    // Fallback logic
+    String shortened = label;
+    if (shortened.toLowerCase().contains('% de descuento')) {
+      shortened = shortened.replaceAll(RegExp(r' de descuento', caseSensitive: false), '');
+    }
+    if (shortened.toLowerCase().contains('unidades')) {
+      shortened = shortened.replaceAll(RegExp(r'unidades', caseSensitive: false), 'U.');
+    }
+    if (shortened.contains(',')) {
+      shortened = shortened.split(',')[0].trim();
+    }
+    return shortened;
   }
 
   Widget _buildCrownIcon() {
@@ -487,6 +696,8 @@ class _ProductCardState extends State<ProductCard> {
       ),
     );
   }
+
+  // Helper methods removed or unused now, keeping them away from build
 
   void _showProductDetail(BuildContext context, String title, String subtitle, String? imageUrl, List<Map<String, Object>> products, String? selectedMarketName) {
        showDialog(
@@ -501,4 +712,19 @@ class _ProductCardState extends State<ProductCard> {
         ),
       );
   }
+}
+
+class _DiagonalClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) {
+    final path = Path();
+    path.lineTo(size.width, 0); // Top right
+    path.lineTo(size.width, size.height); // Bottom right
+    path.lineTo(0, 0); // Top left (Diagonal cut)
+    path.close();
+    return path;
+  }
+
+  @override
+  bool shouldReclip(CustomClipper<Path> oldClipper) => false;
 }

@@ -7,6 +7,7 @@ class CartItem {
   int quantity;
   String? bestMarket;
   double? bestPrice;
+  List<Product>? alternatives;
 
   bool isSelected;
 
@@ -15,6 +16,7 @@ class CartItem {
     this.quantity = 1,
     this.bestMarket,
     this.bestPrice,
+    this.alternatives,
     this.isSelected = false,
   });
 
@@ -63,6 +65,9 @@ class CartItem {
       bestMarket: json['bestMarket'],
       bestPrice: json['bestPrice'] != null ? (json['bestPrice'] as num).toDouble() : null,
       isSelected: json['isSelected'] ?? false,
+      alternatives: json['alternatives'] != null 
+          ? (json['alternatives'] as List).map((p) => Product.fromCachedJson(p as Map<String, dynamic>)).toList()
+          : null,
     );
   }
 
@@ -73,6 +78,7 @@ class CartItem {
        'bestMarket': bestMarket,
        'bestPrice': bestPrice,
        'isSelected': isSelected,
+       if (alternatives != null) 'alternatives': alternatives!.map((p) => _productToJson(p)).toList(),
     };
   }
   

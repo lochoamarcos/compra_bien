@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/report_service.dart';
+import '../services/correction_service.dart';
 import 'package:provider/provider.dart';
 import '../providers/report_provider.dart';
 import '../models/product.dart';
@@ -51,15 +52,46 @@ class _ReportProblemDialogState extends State<ReportProblemDialog> {
        }
     }
 
-    setState(() {
-      _isSending = true;
-    });
+    setState(() => _isSending = true);
+    bool overallSuccess = true;
 
-    final bool sentNow = await ReportService.submitReport(_selectedCategory, finalMessage, userName: name);
-
-    if (sentNow && reportItems.isNotEmpty) {
+    // 1. Route Product Specific Reports to 'CorrectionService' (reports table)
+    if (reportItems.isNotEmpty) {
+       for (var item in reportItems) {
+           final markets = item.problematicMarkets.join(", ");
+           final success = await CorrectionService.submitReport(
+              ean: item.result.ean,
+              market: markets,
+              originalName: item.result.name,
+              userName: name.isNotEmpty ? name : null,
+              note: item.note ?? (text.isNotEmpty ? text : "Reportado desde lista de errores"),
+              ignoreCooldown: true, // NEW: Allow bulk sending
+           );
+           if (!success) overallSuccess = false;
+       }
        reportProvider.clearList();
     }
+
+    // 2. Route general message to 'ReportService' (feedback table) if it's NOT just from product notes
+    // Or if there are NO product items but there IS text
+    if (text.isNotEmpty || reportItems.isEmpty) {
+        String? productName;
+        if (reportItems.length == 1) {
+           productName = reportItems.first.result.name;
+        } else if (reportItems.length > 1) {
+           productName = "Varios Productos (${reportItems.length})";
+        }
+        
+        final feedbackSuccess = await ReportService.submitReport(
+           _selectedCategory, 
+           text.isNotEmpty ? text : "Reporte de productos adjuntos", 
+           userName: name, 
+           productName: productName
+        );
+        if (!feedbackSuccess && reportItems.isEmpty) overallSuccess = false;
+    }
+
+    final bool sentNow = overallSuccess;
 
     if (!mounted) return;
 
@@ -155,7 +187,7 @@ class _ReportProblemDialogState extends State<ReportProblemDialog> {
                                            children: [
                                               Expanded(
                                                  child: Text(
-                                                    '• ${item.result.name} [${item.problematicMarkets.join(", ")}]', 
+                                                    'â€¢ ${item.result.name} [${item.problematicMarkets.join(", ")}]', 
                                                     style: const TextStyle(fontSize: 12),
                                                     maxLines: 1, overflow: TextOverflow.ellipsis
                                                  )

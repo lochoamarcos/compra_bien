@@ -20,7 +20,7 @@ void main() async {
   print('=' * 80);
   print('');
   
-  final coopeRepo = LaCoopeRepository();
+  final coopeRepo = CoopeRepository();
   final carrefourRepo = CarrefourRepository();
   final veaRepo = VeaRepository();
   
@@ -33,15 +33,15 @@ void main() async {
       for (var i = 0; i < products.length; i++) {
         final p = products[i];
         print('\nProducto ${i + 1}:');
-        print('  Store: ${p.store}');
+        print('  Source: ${p.source}');
         print('  Name: ${p.name}');
         print('  Price: \$${p.price}');
         print('  EAN: ${p.ean}');
         print('  ImageURL: ${p.imageUrl}');
-        print('  Description: ${p.description}');
+        print('  Presentation: ${p.presentation}');
         
-        // Check if volume info is in description or name
-        final combined = '${p.name} ${p.description}'.toLowerCase();
+        // Check if volume info is in presentation or name
+        final combined = '${p.name} ${p.presentation}'.toLowerCase();
         final hasML = combined.contains('ml') || combined.contains('cc');
         final hasL = combined.contains('litro') || combined.contains(' l ');
         print('  📊 Contiene volumen en text: ${hasML || hasL ? "✅" : "❌"}');
@@ -66,15 +66,15 @@ void main() async {
       for (var i = 0; i < products.length; i++) {
         final p = products[i];
         print('\nProducto ${i + 1}:');
-        print('  Store: ${p.store}');
+        print('  Source: ${p.source}');
         print('  Name: ${p.name}');
         print('  Price: \$${p.price}');
         print('  EAN: ${p.ean}');
         print('  ImageURL: ${p.imageUrl}');
-        print('  Description: ${p.description}');
+        print('  Presentation: ${p.presentation}');
         
-        // Check if volume info is in description or name
-        final combined = '${p.name} ${p.description}'.toLowerCase();
+        // Check if volume info is in presentation or name
+        final combined = '${p.name} ${p.presentation}'.toLowerCase();
         final hasML = combined.contains('ml') || combined.contains('cc');
         final hasL = combined.contains('litro') || combined.contains(' l ');
         print('  📊 Contiene volumen en text: ${hasML || hasL ? "✅" : "❌"}');
@@ -99,15 +99,15 @@ void main() async {
       for (var i = 0; i < products.length; i++) {
         final p = products[i];
         print('\nProducto ${i + 1}:');
-        print('  Store: ${p.store}');
+        print('  Source: ${p.source}');
         print('  Name: ${p.name}');
         print('  Price: \$${p.price}');
         print('  EAN: ${p.ean}');
         print('  ImageURL: ${p.imageUrl}');
-        print('  Description: ${p.description}');
+        print('  Presentation: ${p.presentation}');
         
-        // Check if volume info is in description or name
-        final combined = '${p.name} ${p.description}'.toLowerCase();
+        // Check if volume info is in presentation or name
+        final combined = '${p.name} ${p.presentation}'.toLowerCase();
         final hasML = combined.contains('ml') || combined.contains('cc');
         final hasL = combined.contains('litro') || combined.contains(' l ');
         print('  📊 Contiene volumen en text: ${hasML || hasL ? "✅" : "❌"}');

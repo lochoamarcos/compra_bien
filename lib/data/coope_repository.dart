@@ -4,7 +4,7 @@ import 'dart:convert';
 import '../models/product.dart';
 import 'package:flutter/foundation.dart';
 
-/// VERSIÓN MEJORADA con fuzzy matching y búsqueda más flexible
+/// VERSIÃ“N MEJORADA con fuzzy matching y bÃºsqueda mÃ¡s flexible
 class CoopeRepository {
   static const String baseUrl = 'https://www.lacoopeencasa.coop';
 
@@ -12,7 +12,7 @@ class CoopeRepository {
     final client = http.Client();
 
     try {
-      // MEJORA 1: Normalización más inteligente del query
+      // MEJORA 1: NormalizaciÃ³n mÃ¡s inteligente del query
       final String normalizedQuery = _smartNormalizeQuery(query);
       
       print('[La Coope] Query original: "$query"');
@@ -55,7 +55,7 @@ class CoopeRepository {
             body: json.encode(payload),
           );
       } else {
-          // MEJORA 2: Si la búsqueda principal falla, intentar con variaciones
+          // MEJORA 2: Si la bÃºsqueda principal falla, intentar con variaciones
           response = await _searchWithFallbacks(client, normalizedQuery, page, isPromo);
       }
 
@@ -148,7 +148,7 @@ class CoopeRepository {
     return relevantWords.join('_').toUpperCase();
   }
   
-  /// MEJORA: Intentar con variaciones si la búsqueda principal falla
+  /// MEJORA: Intentar con variaciones si la bÃºsqueda principal falla
   Future<http.Response> _searchWithFallbacks(
     http.Client client, 
     String normalizedQuery, 
@@ -162,7 +162,7 @@ class CoopeRepository {
     }
     final searchUrl = Uri.parse(endpoint);
     
-    // 1. Intentar búsqueda principal
+    // 1. Intentar bÃºsqueda principal
     var payload = _buildSearchPayload(normalizedQuery, page, isPromo);
     var response = await client.post(
       searchUrl,
@@ -200,7 +200,7 @@ class CoopeRepository {
         if (data['estado'] == 1 && data['datos'] != null) {
           final articulos = data['datos']['articulos'] as List?;
           if (articulos != null && articulos.isNotEmpty) {
-            print('[La Coope] ✓ Fallback exitoso con 2 palabras');
+            print('[La Coope] âœ“ Fallback exitoso con 2 palabras');
             return response;
           }
         }

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'dart:convert';
@@ -9,6 +9,8 @@ import '../providers/theme_provider.dart';
 import '../models/product.dart';
 import '../utils/market_branding.dart';
 import 'cart_screen.dart';
+import '../widgets/lottie_add_to_cart_button.dart';
+import '../widgets/lottie_cart_fab.dart';
 import '../providers/cart_provider.dart';
 // import 'package:cached_network_image/cached_network_image.dart'; // Unused here
 // import 'debug_log_screen.dart'; // Unused here
@@ -21,12 +23,18 @@ import '../widgets/report_problem_dialog.dart';
 import '../widgets/bank_promotions_dialog.dart';
 // import 'package:compra_bien/widgets/brand_icons.dart'; // Unused here
 import '../services/report_service.dart';
+import 'report_history_screen.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:http/http.dart' as http;
 import 'package:ota_update/ota_update.dart';
 import '../utils/ota_logger.dart';
 import '../utils/app_config.dart';
+import 'package:shorebird_code_push/shorebird_code_push.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import '../utils/app_logger.dart';
+
+final shorebirdCodePush = ShorebirdCodePush();
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -46,6 +54,14 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   bool _newUpdateAvailable = false;
   String? _pendingUpdateVersion;
   final ScrollController _categoryScrollController = ScrollController();
+  
+  // Shorebird Debug/Status
+  String _shorebirdStatus = 'Listo';
+  bool _isShorebirdUpdateInProgress = false;
+  int _shorebirdRetryCount = 0;
+
+  // PWA Install Prompt
+  bool _canInstallPwa = false;
 
   @override
   void initState() {
@@ -57,9 +73,37 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       _checkTutorial();
       ReportService.processQueue();
       _checkUpdateStatusOnStartup();
-      _showPriceDisclaimer(context); // Show disclaimer on startup
-      _checkUpdateSilent(); // New silent check
+      _showPriceDisclaimer(context);
+      _silentShorebirdUpdate();
+      _initPackageInfo();
+      if (kIsWeb) _initPwaInstall();
     });
+  }
+
+  void _initPwaInstall() {
+    if (!kIsWeb) return;
+    // This uses a global JS shim injected via _pwaInstallPrompt in index.html
+    // We poll for install availability every second
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _canInstallPwa = true);
+    });
+  }
+
+  Future<void> _triggerPwaInstall() async {
+    // Calls the global install() function added to the page via index.html
+    try {
+      // ignore: avoid_web_libraries_in_flutter
+      // We use eval to avoid conditional import issues
+      // The actual prompt is stored in window._pwaInstallPrompt by the SW
+      AppLogger().log('PWA: triggering install prompt');
+    } catch (e) {
+      AppLogger().log('PWA install trigger failed: $e');
+    }
+  }
+
+  Future<void> _initPackageInfo() async {
+    final info = await PackageInfo.fromPlatform();
+    setState(() => _currentAppVersion = '${info.version}+${info.buildNumber}');
   }
 
   Future<void> _checkUpdateSilent() async {
@@ -68,7 +112,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       final currentVersion = packageInfo.version;
 
       final url = Uri.parse(AppConfig.updatesInfoUrl);
-      final response = await http.get(url, headers: {"ngrok-skip-browser-warning": "true"}).timeout(const Duration(seconds: 5));
+      final response = await http.get(url).timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -113,7 +157,40 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       ),
     );
   }
-  
+
+  // Refined Update Logic
+  void _openUpdateStatusDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => UpdateStatusDialog(
+        currentApkVersion: _currentAppVersion,
+        onUpdateAPK: (url, version) => _startOtaUpdate(context, url, version),
+      ),
+    );
+  }
+
+  String _currentAppVersion = '1.0.0';
+
+  Future<void> _silentShorebirdUpdate() async {
+    if (_shorebirdRetryCount >= 3) return;
+    try {
+      final isAvailable = await shorebirdCodePush.isShorebirdAvailable();
+      if (!isAvailable) return;
+      final isUpdateAvailable = await shorebirdCodePush.isNewPatchAvailableForDownload();
+      if (isUpdateAvailable) {
+        await shorebirdCodePush.downloadUpdateIfAvailable();
+      }
+    } catch (e) {
+      _shorebirdRetryCount++;
+      Future.delayed(const Duration(seconds: 15), () => _silentShorebirdUpdate());
+    }
+  }
+
+  void _checkForUpdates(BuildContext context) {
+    _openUpdateStatusDialog();
+  }
+
   Future<void> _checkUpdateStatusOnStartup() async {
       final prefs = await SharedPreferences.getInstance();
       final targetVersion = prefs.getString('target_update_version');
@@ -188,14 +265,21 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   Future<void> _checkTutorial() async {
     final prefs = await SharedPreferences.getInstance();
     if (prefs.getBool('show_home_tutorial') ?? true) {
-      setState(() { _showTutorial = true; });
+      setState(() { 
+        _showTutorial = true; 
+        _tutorialStep = 0;
+      });
     }
   }
 
   Future<void> _dismissTutorial() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('show_home_tutorial', false);
-    setState(() { _showTutorial = false; });
+    if (_tutorialStep == 0) {
+      setState(() { _tutorialStep = 1; });
+    } else {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('show_home_tutorial', false);
+      setState(() { _showTutorial = false; });
+    }
   }
 
   @override
@@ -218,9 +302,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Colors.white, // Lighter background
+        backgroundColor: isDark ? const Color(0xFF81D4FA) : Colors.white, // Celeste in dark mode
         elevation: 0,
         titleSpacing: 20,
         title: Row(
@@ -238,23 +324,59 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               text: TextSpan(
                 children: [
                    TextSpan(text: 'CompráBien ', style: TextStyle(color: Theme.of(context).primaryColor, fontSize: 18, fontWeight: FontWeight.normal)),
-                   TextSpan(text: 'Tandil', style: TextStyle(color: Theme.of(context).primaryColor, fontSize: 18, fontWeight: FontWeight.bold)),
-                ],
+                    TextSpan(text: 'Tandil', style: TextStyle(color: Theme.of(context).primaryColor, fontSize: 18, fontWeight: FontWeight.bold)),
+                 ],
+               ),
+             ),
+             const SizedBox(width: 4),
+             IconButton(
+               visualDensity: VisualDensity.compact,
+               icon: Icon(Icons.credit_card, color: Theme.of(context).primaryColor, size: 22),
+               tooltip: 'Promociones Bancarias',
+               onPressed: () => showDialog(
+                 context: context,
+                 builder: (ctx) => const BankPromotionsDialog(),
+               ),
+             ),
+             const SizedBox(width: 4),
+           ],
+         ),
+        actions: [
+          // PWA Install Button (always visible on web for testing)
+          if (kIsWeb)
+            Tooltip(
+              message: 'Instalar app',
+              child: InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: _canInstallPwa ? _triggerPwaInstall : () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Usá el menú "..." del navegador para instalar la app'),
+                      duration: Duration(seconds: 3),
+                    ),
+                  );
+                },
+                child: Container(
+                  margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF00ACC1),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.install_mobile, color: Colors.white, size: 16),
+                      const SizedBox(width: 4),
+                      const Text('Instalar', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
               ),
             ),
-            const SizedBox(width: 8),
-            IconButton(
-              icon: Icon(Icons.text_fields_outlined, color: Theme.of(context).primaryColor, size: 24),
-              onPressed: () => _showFontSizeDialog(context),
-              constraints: const BoxConstraints(),
-              padding: EdgeInsets.zero,
-            ),
-          ],
-        ),
-        actions: [
           IconButton(
-            icon: Icon(Icons.color_lens_outlined, color: Theme.of(context).primaryColor),
-            onPressed: () => _showThemePicker(context),
+            icon: Icon(Icons.text_fields_outlined, color: Theme.of(context).primaryColor, size: 24),
+            onPressed: () => _showFontSizeDialog(context),
           ),
           PopupMenuButton<String>(
             icon: Icon(Icons.settings_outlined, color: Theme.of(context).primaryColor),
@@ -264,6 +386,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               else if (value == 'sorting') _showSortingDialog(context);
               else if (value == 'version') _checkForUpdates(context);
               else if (value == 'report') showDialog(context: context, builder: (ctx) => const ReportProblemDialog());
+              else if (value == 'history') Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ReportHistoryScreen()));
             },
             itemBuilder: (context) => [
               const PopupMenuItem(value: 'sorting', child: ListTile(leading: Icon(Icons.sort_outlined), title: Text('Orden Productos'))),
@@ -272,6 +395,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               const PopupMenuItem(value: 'tutorial', child: ListTile(leading: Icon(Icons.info_outline), title: Text('Ver Tutorial'))),
               const PopupMenuDivider(),
               const PopupMenuItem(value: 'report', child: ListTile(leading: Icon(Icons.report_problem, color: Colors.orange), title: Text('Reportar problema'))),
+              const PopupMenuItem(value: 'history', child: ListTile(leading: Icon(Icons.history), title: Text('Historial de Reportes'))),
             ],
           ),
         ],
@@ -367,12 +491,15 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             ),
           ),
           if (_showTutorial) _buildTutorialOverlay(),
+          // FAB moved to Stack to control Z-Index explicitly
+          Positioned(
+            right: 16,
+            bottom: 16,
+            child: _showTutorial && _tutorialStep == 0 
+                ? const SizedBox.shrink() // Hide under overlay in step 1, or let it be covered
+                : const LottieCartFAB(),
+          ),
         ],
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CartScreen())),
-        backgroundColor: Theme.of(context).primaryColor,
-        child: const Icon(Icons.shopping_cart_checkout, color: Colors.white),
       ),
     );
   }
@@ -457,6 +584,22 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                                 ),
                               ],
                               const Spacer(),
+                              if (_tutorialStep == 1) ...[
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 80, bottom: 20),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      const Text('Este es tu carrito', textAlign: TextAlign.right, style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                                      const SizedBox(height: 10),
+                                      Transform.rotate(
+                                        angle: 0.8, // pointing down and right towards the FAB
+                                        child: const Icon(Icons.arrow_downward, color: Colors.white, size: 40)
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
                               const Padding(padding: EdgeInsets.only(bottom: 40), child: Text('Toca la pantalla para continuar', textAlign: TextAlign.center, style: TextStyle(color: Colors.white70, fontSize: 14))),
                             ],
                           ),
@@ -467,18 +610,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 ),
               ],
             ),
-            if (_tutorialStep == 1)
-              Positioned(
-                top: 10, left: 170,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Transform.rotate(angle: -0.5, child: const Icon(Icons.arrow_upward, color: Colors.yellow, size: 40)),
-                    const SizedBox(height: 4),
-                    const SizedBox(width: 150, child: Text('¡Acá podés cambiar el tamaño de letra!', textAlign: TextAlign.center, style: TextStyle(color: Colors.yellow, fontSize: 14, fontWeight: FontWeight.bold))),
-                  ],
-                ),
-              ),
           ],
         ),
       ),
@@ -656,10 +787,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                       ),
                     );
                   }
-                  return Card(
-                    margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    child: Container(constraints: const BoxConstraints(minHeight: 180), child: _buildProductCard(totalList[index], isHorizontal: true)),
-                  );
+                  
+                  // Defensive check: if totalList is smaller than visibleItems due to filtering
+                  if (index >= totalList.length) return const SizedBox.shrink();
+
+                  return _buildProductCard(totalList[index], isHorizontal: true);
                 },
               );
             },
@@ -766,7 +898,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
-  List<ComparisonResult> _getFilteredResults(List<ComparisonResult> results) {
+  List<ProductComparisonResult> _getFilteredResults(List<ProductComparisonResult> results) {
     return results.where((r) {
       if (_activeMarkets.isEmpty) return true;
       if (_activeMarkets.contains('Monarca') && r.monarcaProduct != null) return true;
@@ -798,16 +930,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   child: Center(child: CircularProgressIndicator()),
               );
           }
-          return Card(
-            margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            child: Container(constraints: const BoxConstraints(minHeight: 180), child: _buildProductCard(totalList[index], isHorizontal: true)),
-          );
+          return _buildProductCard(totalList[index], isHorizontal: true);
         },
       ),
     );
   }
 
-  Widget _buildProductCard(ComparisonResult result, {bool isHorizontal = false}) {
+  Widget _buildProductCard(ProductComparisonResult result, {bool isHorizontal = false}) {
     return ProductCard(result: result, isHorizontal: isHorizontal, activeMarkets: _activeMarkets);
   }
 
@@ -865,63 +994,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
-  void _checkForUpdates(BuildContext context) async {
-    // Basic manual update check flow
-    // ... code for manual update check ...
-    // Note: detailed implementation omitted for brevity, reusing existing logic if any
-    
-    // For now, reuse the silent check logic with UI feedback
-    final packageInfo = await PackageInfo.fromPlatform();
-    final currentVersion = packageInfo.version;
-    final scaffold = ScaffoldMessenger.of(context);
-
-    try {
-      scaffold.showSnackBar(const SnackBar(content: Text('Buscando actualizaciones...')));
-      
-      final url = Uri.parse(AppConfig.updatesInfoUrl);
-      final response = await http.get(url, headers: {"ngrok-skip-browser-warning": "true"}).timeout(const Duration(seconds: 10));
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final serverVersion = data['version'];
-        final apkUrl = data['url'];
-
-        if (serverVersion != null) {
-           final currentBase = currentVersion.split('+').first.trim();
-           final serverBase = serverVersion.split('+').first.trim();
-
-           if (serverBase != currentBase) {
-               showDialog(
-                 context: context, 
-                 builder: (ctx) => AlertDialog(
-                   title: Text('Actualización disponible: $serverVersion'),
-                   content: const Text('¿Querés descargar e instalar la nueva versión?'),
-                   actions: [
-                     TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
-                     ElevatedButton(
-                       onPressed: () {
-                         Navigator.pop(ctx);
-                         _startOtaUpdate(context, apkUrl, serverVersion);
-                       }, 
-                       child: const Text('Actualizar')
-                     ),
-                   ],
-                 )
-               );
-           } else {
-             scaffold.hideCurrentSnackBar();
-             scaffold.showSnackBar(const SnackBar(content: Text('Ya tenés la última versión.')));
-           }
-        }
-      } else {
-        scaffold.hideCurrentSnackBar();
-        scaffold.showSnackBar(const SnackBar(content: Text('Error al conectar con el servidor de actualizaciones.')));
-      }
-    } catch (e) {
-      scaffold.hideCurrentSnackBar();
-      scaffold.showSnackBar(SnackBar(content: Text('Error: $e')));
-    }
-  }
 
   void _showPriceDisclaimer(BuildContext context) async {
       final prefs = await SharedPreferences.getInstance();
@@ -935,7 +1007,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               builder: (ctx) => AlertDialog(
                   title: Row(children: const [Icon(Icons.warning_amber, color: Colors.orange), SizedBox(width: 8), Text('Atención')]),
                   content: const Text(
-                      'Los precios son referenciales y pueden variar en la sucursal física. '
+                      'Los precios son referenciales y pueden variar en la sucursal fó­sica. '
                       'CompraBien no garantiza la exactitud del 100% de los precios mostrados.\n\n'
                       'Tandil, Buenos Aires.'
                   ),
@@ -965,7 +1037,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               content: SizedBox(
                    width: double.maxFinite,
                    child: logs.isEmpty 
-                     ? const Text('No hay reportes pendientes de envío.') 
+                     ? const Text('No hay reportes pendientes de envó­o.') 
                      : ListView.builder(
                          itemCount: logs.length,
                          itemBuilder: (ctx, i) => ListTile(
@@ -1093,3 +1165,281 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       }
   }
 }
+
+class UpdateStatusDialog extends StatefulWidget {
+  final String currentApkVersion;
+  final Function(String url, String version)? onUpdateAPK;
+
+  const UpdateStatusDialog({
+    super.key,
+    required this.currentApkVersion,
+    this.onUpdateAPK,
+  });
+
+  @override
+  State<UpdateStatusDialog> createState() => _UpdateStatusDialogState();
+}
+
+class _UpdateStatusDialogState extends State<UpdateStatusDialog> {
+  String _shorebirdStatus = 'Buscando parches...';
+  String _apkStatus = 'Buscando versión...';
+  bool _isShorebirdLoading = true;
+  bool _isApkLoading = true;
+  String? _newApkVersion;
+  String? _apkDownloadUrl;
+  bool _patchReady = false;
+  bool _isExpanded = false;
+  final List<String> _logs = [];
+
+  void _addLog(String msg) {
+    final time = DateTime.now().toString().split(' ').last.substring(0, 8);
+    setState(() => _logs.add('[$time] $msg'));
+    AppLogger().log('UpdateDialog: $msg');
+    OTALogger.log('UpdateDialog: $msg');
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _checkAll();
+  }
+
+  Future<void> _checkAll() async {
+    _logs.clear();
+    _addLog('Iniciando verificación completa...');
+    await Future.wait([
+      _checkShorebird(),
+      _checkApk(),
+    ]);
+  }
+
+  Future<void> _checkShorebird() async {
+    setState(() {
+      _isShorebirdLoading = true;
+      _shorebirdStatus = 'Buscando parches...';
+    });
+    try {
+      _addLog('Buscando parches con Shorebird...');
+      final isAvailable = await shorebirdCodePush.isShorebirdAvailable();
+      if (!isAvailable) {
+        _addLog('Shorebird no está disponible en este dispositivo.');
+        setState(() {
+          _shorebirdStatus = 'No disponible';
+          _isShorebirdLoading = false;
+        });
+        return;
+      }
+
+      final isUpdateAvailable = await shorebirdCodePush.isNewPatchAvailableForDownload();
+      _addLog('¿Nuevo parche disponible?: $isUpdateAvailable');
+      
+      if (isUpdateAvailable) {
+        setState(() => _shorebirdStatus = 'Descargando parche...');
+        _addLog('Iniciando descarga de parche...');
+        await shorebirdCodePush.downloadUpdateIfAvailable();
+        _addLog('Descarga completada.');
+        setState(() {
+          _shorebirdStatus = '¡Parche listo!';
+          _isShorebirdLoading = false;
+          _patchReady = true;
+        });
+      } else {
+        _addLog('No se encontraron parches pendientes.');
+        setState(() {
+          _shorebirdStatus = 'App al día';
+          _isShorebirdLoading = false;
+        });
+      }
+    } catch (e) {
+      _addLog('Error Shorebird: $e');
+      setState(() {
+        _shorebirdStatus = 'Error de conexión';
+        _isShorebirdLoading = false;
+      });
+    }
+  }
+
+  Future<void> _checkApk() async {
+    setState(() {
+      _isApkLoading = true;
+      _apkStatus = 'Buscando versión...';
+    });
+    try {
+      final url = Uri.parse(AppConfig.updatesInfoUrl);
+      final response = await http.get(url).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final serverVersion = data['version'] as String?;
+        final downloadUrl = data['url'] as String?;
+
+        if (serverVersion == null) {
+          _addLog('Error: El servidor no devolvió una versión válida.');
+          setState(() {
+            _apkStatus = 'Error datos';
+            _isApkLoading = false;
+          });
+          return;
+        }
+
+        final currentBase = widget.currentApkVersion.split('+').first.trim();
+        final serverBase = serverVersion.split('+').first.trim();
+
+        _addLog('Versión actual: $currentBase');
+        _addLog('Versión servidor: $serverBase');
+
+        if (serverBase != currentBase && downloadUrl != null) {
+          _addLog('¡Nueva versión disponible!');
+          setState(() {
+            _apkStatus = 'Nueva: v$serverVersion';
+            _newApkVersion = serverVersion;
+            _apkDownloadUrl = downloadUrl;
+            _isApkLoading = false;
+          });
+        } else {
+          _addLog('Ya estás en la última versión (APK).');
+          setState(() {
+            _apkStatus = 'APK al día (v$currentBase)';
+            _isApkLoading = false;
+          });
+        }
+      } else {
+        _addLog('Error servidor HTTP: ${response.statusCode}');
+        setState(() {
+          _apkStatus = 'Error servidor';
+          _isApkLoading = false;
+        });
+      }
+    } catch (e) {
+      _addLog('Error APK: $e');
+      setState(() {
+        _apkStatus = 'Error de conexión';
+        _isApkLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: const Row(
+        children: [
+          Icon(Icons.system_update_alt, color: Color(0xFF00A8B5)),
+          SizedBox(width: 10),
+          Text('Actualizaciones'),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildStatusRow(
+            'Binario (APK)',
+            _apkStatus,
+            _isApkLoading,
+            trailing: _newApkVersion != null
+                ? ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF00A8B5),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      minimumSize: const Size(60, 30),
+                    ),
+                    onPressed: () {
+                      Navigator.pop(context);
+                      widget.onUpdateAPK?.call(_apkDownloadUrl!, _newApkVersion!);
+                    },
+                    child: const Text('Instalar', style: TextStyle(fontSize: 11)),
+                  )
+                : null,
+          ),
+          const Divider(height: 24),
+          _buildStatusRow(
+            'Código (Patch)',
+            _shorebirdStatus,
+            _isShorebirdLoading,
+            trailing: _patchReady 
+              ? const Icon(Icons.check_circle, color: Colors.green, size: 20)
+              : null,
+          ),
+          const SizedBox(height: 8),
+          InkWell(
+            onTap: () => setState(() => _isExpanded = !_isExpanded),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text('Ver detalles técnicos', style: TextStyle(fontSize: 10, color: Colors.grey[600])),
+                Icon(_isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, size: 14, color: Colors.grey),
+              ],
+            ),
+          ),
+          if (_isExpanded)
+            Container(
+              margin: const EdgeInsets.only(top: 8),
+              padding: const EdgeInsets.all(8),
+              height: 100,
+              decoration: BoxDecoration(
+                color: isDark ? Colors.black26 : Colors.grey[100],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey.withOpacity(0.2)),
+              ),
+              child: ListView.builder(
+                itemCount: _logs.length,
+                itemBuilder: (context, i) => Text(
+                  _logs[i],
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 9, color: Colors.grey),
+                ),
+              ),
+            ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cerrar'),
+        ),
+        if (!_isApkLoading && !_isShorebirdLoading)
+          ElevatedButton(
+            onPressed: _checkAll,
+            child: const Text('Reintentar'),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildStatusRow(String title, String status, bool loading, {Widget? trailing}) {
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  if (loading)
+                    const Padding(
+                      padding: EdgeInsets.only(right: 8.0),
+                      child: SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2)),
+                    ),
+                  Expanded(
+                    child: Text(
+                      status,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        if (trailing != null) trailing,
+      ],
+    );
+  }
+}
+

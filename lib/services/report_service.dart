@@ -14,13 +14,15 @@ import 'correction_service.dart';
 class PendingReport {
   final String category;
   final String message;
-  final String userName; // Added userName
+  final String userName; 
+  final String? productName; // NEW
   final DateTime timestamp;
 
   PendingReport({
     required this.category,
     required this.message,
-    this.userName = '', // Default to empty
+    this.userName = '',
+    this.productName,
     required this.timestamp,
   });
 
@@ -28,6 +30,7 @@ class PendingReport {
     'category': category,
     'message': message,
     'userName': userName,
+    'productName': productName,
     'timestamp': timestamp.toIso8601String(),
   };
 
@@ -35,6 +38,7 @@ class PendingReport {
     category: json['category'],
     message: json['message'],
     userName: json['userName'] ?? '',
+    productName: json['productName'],
     timestamp: DateTime.parse(json['timestamp']),
   );
 }
@@ -43,7 +47,7 @@ class ReportService {
   static const String _queueKey = 'pending_reports_queue';
   // static const String _baseUrl = AppConfig.reportsUrl; // Deprecated for Supabase
 
-  // Horario: 11:30 AM (11:30) hasta 12:00 AM (00:00 del día siguiente)
+  // Horario: 11:30 AM (11:30) hasta 12:00 AM (00:00 del dÃ­a siguiente)
   static bool get isServerOnline {
     // Supabase is always online (24/7). Legacy schedule removed.
     return true;
@@ -61,14 +65,13 @@ class ReportService {
 
   /// Tries to submit a report.
   /// If fails 3 times or outside hours, it gets queued.
-  static Future<bool> submitReport(String category, String message, {String userName = ''}) async {
+  static Future<bool> submitReport(String category, String message, {String userName = '', String? productName}) async {
     // 0. Gather Metadata (IP & Device Info)
     String metadata = await _gatherMetadata();
     String fullMessage = "$message\n\n[METADATA]\n$metadata";
 
-    // 1. Always attempt submission first (even if potentially outside hours)
-    // We use a single retry here for quick UI feedback
-    bool success = await _attemptWithRetries(category, fullMessage, userName, retries: 1);
+    // 1. Always attempt submission first
+    bool success = await _attemptWithRetries(category, fullMessage, userName, productName: productName, retries: 1);
     
     if (success) {
       return true;
@@ -76,11 +79,11 @@ class ReportService {
 
     // 2. If it fails, save to queue
     print('No se pudo enviar al instante. Guardando en cola.');
-    await _addToQueue(category, message, userName);
+    await _addToQueue(category, message, userName, productName: productName);
     return false;
   }
 
-  static Future<bool> _attemptWithRetries(String category, String message, String userName, {int retries = 3}) async {
+  static Future<bool> _attemptWithRetries(String category, String message, String userName, {String? productName, int retries = 3}) async {
     // Read OTA logs if they exist (for bug reports)
     String? otaLogs;
     // Read OTA logs if they exist (attach to ANY report for better debugging context)
@@ -93,25 +96,28 @@ class ReportService {
 
     for (int i = 0; i < retries; i++) {
         try {
-            // Supabase Insert to 'feedback' table
-            await Supabase.instance.client.from('feedback').insert({
+            final insertData = {
                 'category': category,
                 'message': message,
-                'user_id': uid, // Persistent ID
+                'user_id': uid,
                 'metadata': {
                     'username': userName,
                     'device': deviceInfo,
                     'ota_logs': otaLogs ?? '', 
+                    'original_name': productName ?? 'unknown',
                     'timestamp': DateTime.now().toIso8601String()
                 },
                 'status': 'open',
-                'project_id': 'comprabien', // NEW: Multi-tenancy
-            });
+                'project_id': 'comprabien',
+            };
 
-            return true; // Success
+            print('DEBUG: Enviando a feedback -> $insertData');
+            await Supabase.instance.client.from('feedback').insert(insertData);
+
+            return true; 
 
         } catch (e) {
-             print('Intento ${i + 1} fallido (Supabase): $e');
+             print('CRITICAL: Fallo al insertar en FEEDBACK -> $e');
         }
       
         if (i < retries - 1) {
@@ -121,7 +127,7 @@ class ReportService {
     return false;
   }
 
-  static Future<void> _addToQueue(String category, String message, String userName) async {
+  static Future<void> _addToQueue(String category, String message, String userName, {String? productName}) async {
     final prefs = await SharedPreferences.getInstance();
     final List<String> queue = prefs.getStringList(_queueKey) ?? [];
     
@@ -129,6 +135,7 @@ class ReportService {
       category: category,
       message: message,
       userName: userName,
+      productName: productName,
       timestamp: DateTime.now(),
     );
     
@@ -142,7 +149,7 @@ class ReportService {
   /// Usually called on App start or Resumed.
   static Future<void> processQueue() async {
     if (_isProcessing) {
-      print('Ya se está procesando la cola. Omitiendo.');
+      print('Ya se estÃ¡ procesando la cola. Omitiendo.');
       return;
     }
     
@@ -162,8 +169,8 @@ class ReportService {
 
       for (String item in queue) {
         final report = PendingReport.fromJson(jsonDecode(item));
-        // Intentamos enviar (1 solo intento para cada uno al procesar cola para no bloquear mucho tiempo)
-        bool success = await _attemptWithRetries(report.category, report.message, report.userName, retries: 1);
+        // Intentamos enviar
+        bool success = await _attemptWithRetries(report.category, report.message, report.userName, productName: report.productName, retries: 1);
         if (!success) {
           remaining.add(item);
         } else {
@@ -239,38 +246,29 @@ class ReportService {
       }
   }
 
-  static Future<List<Map<String, dynamic>>> fetchReports() async {
-      try {
-        // 1. Fetch General Feedback
-        final feedbackResponse = await Supabase.instance.client
-            .from('feedback')
-            .select()
-            .eq('project_id', 'comprabien') // NEW: Multi-tenancy
-            .order('timestamp', ascending: false)
-            .limit(25);
+  static Future<List<Map<String, dynamic>>> fetchMyReports() async {
+      final uid = await CorrectionService.getUniqueUserId();
+      return fetchReports(specificUserId: uid);
+  }
 
-        // 2. Fetch Product Corrections
-        final correctionsResponse = await Supabase.instance.client
-            .from('reports') // Table defined in CorrectionService
+  static Future<List<Map<String, dynamic>>> fetchReports({String? specificUserId}) async {
+      try {
+        // 1. Fetch Product Corrections (Prices/Offers)
+        var correctionsQuery = Supabase.instance.client
+            .from('reports') 
             .select()
-            .eq('project_id', 'comprabien') // NEW: Multi-tenancy
-            .order('created_at', ascending: false)
-            .limit(25);
+            .eq('project_id', 'comprabien');
+
+        if (specificUserId != null) {
+            correctionsQuery = correctionsQuery.eq('user_id', specificUserId);
+        }
+
+        final correctionsResponse = await correctionsQuery
+            .order('created_at', ascending: false) // Restoring order for latest results
+            .limit(50);
+
 
         List<Map<String, dynamic>> combined = [];
-
-        // Map Feedback
-        for (var item in feedbackResponse) {
-           combined.add({
-             'type': 'feedback',
-             'category': item['category'] ?? 'General',
-             'message': item['message'] ?? '',
-             'user': (item['metadata'] is Map ? item['metadata']['username'] : null) ?? 'Anónimo',
-             'id': item['id'].toString(),
-             'timestamp': item['timestamp'],
-             'details': item['metadata'],
-           });
-        }
 
         // Map Corrections
         for (var item in correctionsResponse) {
@@ -279,20 +277,37 @@ class ReportService {
            final price = item['suggested_price'];
            final offer = item['suggested_offer'];
            
-           String msg = "Corrección de Producto ($ean) en $market.";
-           if (price != null) msg += " Precio: \$$price.";
+           String productName = 'Producto';
+           if (item['metadata'] is Map) {
+              productName = item['metadata']['original_name'] ?? 'Producto';
+           }
+
+           String msg = "Ajuste en $market.";
+           if (price != null) msg += " Nuevo precio: \$$price.";
            if (offer != null) msg += " Oferta: $offer.";
+
+           // NEW: Extra note from dedicated column OR metadata
+           final String? note = item['message'] ?? (item['metadata'] is Map ? item['metadata']['message'] : null);
+           if (note != null && note.isNotEmpty) {
+              msg += "\nNota: $note";
+           }
 
            combined.add({
              'type': 'correction',
-             'category': 'Corrección de Precio/Prod',
+             'category': 'Corrección de Precio',
+             'product_name': productName,
              'message': msg,
-             'user': 'Community User', // Corrections typically don't store username in metadata like feedback
+             'user': (item['metadata'] is Map ? item['metadata']['username'] : null) ?? (specificUserId != null ? 'Yo' : 'Anónimo'),
              'id': item['id'].toString(),
-             'timestamp': item['created_at'], // Supabase default timestamp col
+             'timestamp': item['created_at'] ?? item['timestamp'] ?? item['metadata']?['timestamp'],
+             'image_url': item['image_url'],
+             'market': market,
+             'ean': ean,
              'details': item,
            });
         }
+
+
 
         // Sort by timestamp descending
         combined.sort((a, b) {

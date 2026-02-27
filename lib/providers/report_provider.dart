@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/product.dart';
 
 class ReportItem {
-  final ComparisonResult result;
+  final ProductComparisonResult result;
   final Set<String> problematicMarkets;
   final String? note;
   final DateTime timestamp;
@@ -21,7 +21,7 @@ class ReportProvider with ChangeNotifier {
 
   List<ReportItem> get reportList => _reportList;
 
-  void addItem(ComparisonResult result, Set<String> badMarkets, {String? note}) {
+  void addItem(ProductComparisonResult result, Set<String> badMarkets, {String? note}) {
     // Check if already exists, if so update
     final index = _reportList.indexWhere((item) => item.result.ean == result.ean && item.result.name == result.name);
     
@@ -41,7 +41,7 @@ class ReportProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  void removeItem(ComparisonResult result) {
+  void removeItem(ProductComparisonResult result) {
     _reportList.removeWhere((item) => item.result.ean == result.ean && item.result.name == result.name);
     notifyListeners();
   }
@@ -51,7 +51,7 @@ class ReportProvider with ChangeNotifier {
     notifyListeners();
   }
   
-  bool isReported(ComparisonResult result) {
+  bool isReported(ProductComparisonResult result) {
       return _reportList.any((item) => item.result.ean == result.ean && item.result.name == result.name);
   }
 }
