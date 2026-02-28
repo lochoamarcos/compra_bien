@@ -82,7 +82,7 @@ class _CompraBienAppState extends State<CompraBienApp> with WidgetsBindingObserv
     return Consumer<ThemeProvider>(
       builder: (context, themeProvider, child) {
          return MaterialApp(
-          title: 'ComprÃ¡Bien',
+          title: 'CompraBien',
           themeMode: themeProvider.themeMode,
           theme: _getThemeData(themeProvider.themeType, Brightness.light),
           darkTheme: _getThemeData(themeProvider.themeType, Brightness.dark),
