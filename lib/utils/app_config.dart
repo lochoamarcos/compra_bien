@@ -27,20 +27,11 @@ class AppConfig {
   static String getProxiedUrl(String originalUrl, String rewritePrefix) {
     if (!kIsWeb) return originalUrl;
     
-    final host = Uri.base.host;
-    // If testing locally (e.g. Chrome via 'flutter run'), Vercel Rewrites are not available.
-    // Use the external UPZ backend proxy to prevent 404 errors.
-    if (host == 'localhost' || host == '127.0.0.1') {
-      final proxied = '$upzBackendUrl/api/proxy?url=${Uri.encodeComponent(originalUrl)}';
-      debugPrint('🌐 PROXY (Local/Debug): Using UPZ Backend for $originalUrl');
-      return proxied;
-    }
-    
-    // In production (deployed to Vercel), use the high-performance internal rewrites.
-    final uri = Uri.parse(originalUrl);
-    final baseUrlString = '${uri.scheme}://${uri.host}';
-    final proxied = originalUrl.replaceFirst(baseUrlString, rewritePrefix);
-    debugPrint('🚀 PROXY (Production): Using Vercel Rewrite ($rewritePrefix) for $originalUrl');
+    // Always use the UPZ backend proxy to bypass WAFs and CORS.
+    // Vercel native rewrites forward the browser's Origin and Referer headers
+    // which causes supermarkets (Carrefour, La Coope, Vea) to block the requests (404/403).
+    final proxied = '$upzBackendUrl/api/proxy?url=${Uri.encodeComponent(originalUrl)}';
+    debugPrint('🌐 PROXY (Custom Backend): Using UPZ Backend for $originalUrl');
     return proxied;
   }
 
