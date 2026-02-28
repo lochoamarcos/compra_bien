@@ -31,8 +31,9 @@ import 'package:ota_update/ota_update.dart';
 import '../utils/ota_logger.dart';
 import '../utils/app_config.dart';
 import 'package:shorebird_code_push/shorebird_code_push.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart';
 import '../utils/app_logger.dart';
+import '../utils/js_stub.dart' if (dart.library.js) 'dart:js' as js;
 
 final shorebirdCodePush = ShorebirdCodePush();
 
@@ -113,6 +114,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     }
   }
 
+  bool _isIosWeb() {
+    if (!kIsWeb) return false;
+    return defaultTargetPlatform == TargetPlatform.iOS;
+  }
+
   Future<void> _initPackageInfo() async {
     final info = await PackageInfo.fromPlatform();
     setState(() => _currentAppVersion = '${info.version}+${info.buildNumber}');
@@ -145,6 +151,75 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     } catch (_) {
       // Silent failure
     }
+  }
+
+  void _showIosInstallInstructions() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.apple, color: Colors.black),
+            SizedBox(width: 10),
+            Text('Instalar en iPhone'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Para instalar esta app en tu iPhone, seguí estos pasos:'),
+            const SizedBox(height: 20),
+            _buildIosStep(1, 'Tocá el botón "Compartir" en el menú inferior de Safari (el cuadrado con la flecha hacia arriba).', Icons.ios_share),
+            const SizedBox(height: 15),
+            _buildIosStep(2, 'Buscá y tocá la opción "Agregar a inicio".', Icons.add_box_outlined),
+            const SizedBox(height: 15),
+            _buildIosStep(3, 'Tocá "Agregar" arriba a la derecha.', Icons.add),
+            const SizedBox(height: 20),
+            const Center(
+              child: Text(
+                '¡Y listo! Ya aparecerá en tu pantalla principal.',
+                style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF00ACC1)),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Entendido', style: TextStyle(color: Color(0xFF00ACC1), fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildIosStep(int number, String text, IconData icon) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        CircleAvatar(
+          radius: 12,
+          backgroundColor: const Color(0xFF00ACC1),
+          child: Text('$number', style: const TextStyle(fontSize: 12, color: Colors.white)),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: RichText(
+            text: TextSpan(
+              style: const TextStyle(color: Colors.black, fontSize: 14),
+              children: [
+                TextSpan(text: text),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 5),
+        Icon(icon, size: 20, color: Colors.grey[700]),
+      ],
+    );
   }
 
   void _showUpdateBanner() {
@@ -357,16 +432,22 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           // PWA Install Button (only on web, and only if not already standalone)
           if (kIsWeb && !_isStandalone())
             Tooltip(
-              message: 'Instalar app',
+              message: 'Descargar app',
               child: InkWell(
                 borderRadius: BorderRadius.circular(8),
-                onTap: _canInstallPwa ? _triggerPwaInstall : () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Usá el menú "..." del navegador para instalar la app'),
-                      duration: Duration(seconds: 3),
-                    ),
-                  );
+                onTap: () {
+                  if (_isIosWeb()) {
+                    _showIosInstallInstructions();
+                  } else if (_canInstallPwa) {
+                    _triggerPwaInstall();
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Usá el menú del navegador para instalar la app'),
+                        duration: Duration(seconds: 3),
+                      ),
+                    );
+                  }
                 },
                 child: Container(
                   margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
@@ -378,9 +459,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.install_mobile, color: Colors.white, size: 16),
+                      Icon(Icons.download, color: Colors.white, size: 16),
                       const SizedBox(width: 4),
-                      const Text('Instalar', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                      const Text('Descargar', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
                     ],
                   ),
                 ),

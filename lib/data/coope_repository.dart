@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import '../models/product.dart';
 import '../utils/app_config.dart';
-
 /// VERSIÃ“N MEJORADA con fuzzy matching y bÃºsqueda mÃ¡s flexible
 class CoopeRepository {
   static const String baseUrl = 'https://www.lacoopeencasa.coop';

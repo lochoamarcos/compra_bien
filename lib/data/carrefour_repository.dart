@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart'; // for kIsWeb
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import '../models/product.dart';
 import '../utils/app_config.dart';
-
 class CarrefourRepository {
   static const String baseUrl = 'https://www.carrefour.com.ar';
 
@@ -301,7 +303,7 @@ class CarrefourRepository {
 
         String finalUrl = fullUrl.toString();
         if (kIsWeb) {
-           finalUrl = '$corsProxy${Uri.encodeComponent(finalUrl)}';
+           finalUrl = finalUrl.replaceFirst('https://www.carrefour.com.ar', AppConfig.carrefourProxy);
         }
 
         final res = await http.get(Uri.parse(finalUrl), headers: {

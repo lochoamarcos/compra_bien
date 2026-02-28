@@ -1,14 +1,12 @@
-
 import 'package:http/http.dart' as http;
-// import 'dart:io'; // Remove dart:io to support Web
 import 'dart:convert';
 import '../models/product.dart';
 import '../models/bank_promotion.dart';
-
 import 'package:flutter/foundation.dart'; // for kIsWeb
 import '../utils/app_config.dart';
 
 class MonarcaRepository {
+  static const String baseUrl = 'https://api.monarcadigital.com.ar';
   Future<List<Product>> searchProducts(String query, {int page = 0, int size = 20}) async {
     String endpoint = '$baseUrl/products/search?query=$query&page=$page&size=$size';
     if (kIsWeb) {
@@ -109,7 +107,7 @@ class MonarcaRepository {
   Future<Map<String, dynamic>?> _fetchProductDetail(String id, http.Client client) async {
       String endpoint = '$baseUrl/products/$id';
       if (kIsWeb) {
-        endpoint = '$corsProxy${Uri.encodeComponent(endpoint)}';
+        endpoint = endpoint.replaceFirst(baseUrl, AppConfig.monarcaProxy);
       }
       final url = Uri.parse(endpoint);
 
@@ -131,7 +129,7 @@ class MonarcaRepository {
   Future<List<BankPromotion>> getBankPromotions() async {
       String endpoint = '$baseUrl/marketingPromotions/getValidPromotions';
       if (kIsWeb) {
-        endpoint = '$corsProxy${Uri.encodeComponent(endpoint)}';
+        endpoint = endpoint.replaceFirst(baseUrl, AppConfig.monarcaProxy);
       }
       final url = Uri.parse(endpoint);
       final client = http.Client();
