@@ -90,14 +90,26 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   Future<void> _triggerPwaInstall() async {
-    // Calls the global install() function added to the page via index.html
+    if (!kIsWeb) return;
     try {
+      // Call the global function defined in index.html
       // ignore: avoid_web_libraries_in_flutter
-      // We use eval to avoid conditional import issues
-      // The actual prompt is stored in window._pwaInstallPrompt by the SW
-      AppLogger().log('PWA: triggering install prompt');
+      js.context.callMethod('triggerInstall');
+      AppLogger().log('PWA: triggered native install prompt');
     } catch (e) {
       AppLogger().log('PWA install trigger failed: $e');
+    }
+  }
+
+  bool _isStandalone() {
+    if (!kIsWeb) return false;
+    try {
+      // Check for standalone display mode (PWA installed)
+      final mq = MediaQuery.of(context);
+      return mq.displayFeatures.any((f) => f.type == DisplayFeatureType.unknown) || 
+             js.context.callMethod('matchMedia', ['(display-mode: standalone)']).operatorAt('matches');
+    } catch (_) {
+      return false;
     }
   }
 
@@ -342,8 +354,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
            ],
          ),
         actions: [
-          // PWA Install Button (always visible on web for testing)
-          if (kIsWeb)
+          // PWA Install Button (only on web, and only if not already standalone)
+          if (kIsWeb && !_isStandalone())
             Tooltip(
               message: 'Instalar app',
               child: InkWell(
@@ -593,7 +605,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                                       const Text('Este es tu carrito', textAlign: TextAlign.right, style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
                                       const SizedBox(height: 10),
                                       Transform.rotate(
-                                        angle: 0.8, // pointing down and right towards the FAB
+                                        angle: -0.8, // pointing down and right towards the FAB
                                         child: const Icon(Icons.arrow_downward, color: Colors.white, size: 40)
                                       ),
                                     ],

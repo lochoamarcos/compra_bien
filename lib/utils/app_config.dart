@@ -12,8 +12,14 @@ class AppConfig {
   static const String updatesInfoUrl = '$upzBackendUrl/projects/comprabien/updates/version.js';
 
   // UPZ Backend (Vercel)
-  static const String upzBackendUrl = 'https://upzbackend.vercel.app'; // <--- Ajustar si usaste otro nombre
+  static const String upzBackendUrl = 'https://upzbackend.vercel.app'; 
   static const String nsfwApiKey = 'upz_nsfw_prod_2024_x92k!';
+
+  // Vercel Internal CORS Proxies (Defined in vercel.json)
+  static const String carrefourProxy = '/api/super/carrefour';
+  static const String veaProxy = '/api/super/vea';
+  static const String monarcaProxy = '/api/super/monarca';
+  static const String coopeProxy = '/api/super/coope';
 
   // Legacy/Reference (Deprecated)
   // static const String serverBaseUrl = 'https://yolanda-metapsychological-consentaneously.ngrok-free.dev';

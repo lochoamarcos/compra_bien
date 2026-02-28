@@ -1,13 +1,8 @@
-
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-import '../models/product.dart';
 import 'package:flutter/foundation.dart'; // for kIsWeb
+import '../utils/app_config.dart';
 
 class VeaRepository {
   static const String baseUrl = 'https://www.vea.com.ar';
-  // Using a public CORS proxy for demo purposes on Web
-  static const String corsProxy = 'https://corsproxy.io/?';
 
   Future<List<Product>> searchProducts(String query, {int page = 0, int size = 20, String? categoryId}) async {
     final from = page * size;
@@ -21,7 +16,8 @@ class VeaRepository {
       endpoint += '&ft=$query';
     }
     if (kIsWeb) {
-      endpoint = '$corsProxy${Uri.encodeComponent(endpoint)}';
+      // Use internal Vercel rewrite proxy
+      endpoint = endpoint.replaceFirst(baseUrl, AppConfig.veaProxy);
     }
     final url = Uri.parse(endpoint);
      

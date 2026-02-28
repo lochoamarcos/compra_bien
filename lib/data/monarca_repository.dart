@@ -6,15 +6,15 @@ import '../models/product.dart';
 import '../models/bank_promotion.dart';
 
 import 'package:flutter/foundation.dart'; // for kIsWeb
+import '../utils/app_config.dart';
 
 class MonarcaRepository {
-  static const String baseUrl = 'https://api.monarcadigital.com.ar';
-  static const String corsProxy = 'https://corsproxy.io/?';
-  
   Future<List<Product>> searchProducts(String query, {int page = 0, int size = 20}) async {
     String endpoint = '$baseUrl/products/search?query=$query&page=$page&size=$size';
     if (kIsWeb) {
-      endpoint = '$corsProxy${Uri.encodeComponent(endpoint)}';
+      // Use internal Vercel rewrite proxy
+      const String monarcaUrl = 'https://api.monarcadigital.com.ar';
+      endpoint = endpoint.replaceFirst(monarcaUrl, AppConfig.monarcaProxy);
     }
     final url = Uri.parse(endpoint);
     

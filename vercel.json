@@ -1,6 +1,22 @@
 {
     "rewrites": [
         {
+            "source": "/api/super/carrefour/(.*)",
+            "destination": "https://www.carrefour.com.ar/$1"
+        },
+        {
+            "source": "/api/super/vea/(.*)",
+            "destination": "https://www.vea.com.ar/$1"
+        },
+        {
+            "source": "/api/super/monarca/(.*)",
+            "destination": "https://api.monarcadigital.com.ar/$1"
+        },
+        {
+            "source": "/api/super/coope/(.*)",
+            "destination": "https://api.lacoopeencasa.coop/api/$1"
+        },
+        {
             "source": "/(.*)",
             "destination": "/index.html"
         }

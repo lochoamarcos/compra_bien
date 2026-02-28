@@ -32,16 +32,23 @@
   <link rel="manifest" href="manifest.json">
   <script>
     // Capture the beforeinstallprompt event for PWA install button
-    let _pwaInstallPrompt = null;
+    window._pwaInstallPrompt = null;
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
-      _pwaInstallPrompt = e;
-      // Dispatch a custom event that Flutter can observe via JS interop
-      window.dispatchEvent(new Event('pwa-install-ready'));
+      window._pwaInstallPrompt = e;
+      console.log('PWA: beforeinstallprompt captured');
     });
     window.triggerInstall = function () {
-      if (_pwaInstallPrompt) {
-        _pwaInstallPrompt.prompt();
+      if (window._pwaInstallPrompt) {
+        window._pwaInstallPrompt.prompt();
+        window._pwaInstallPrompt.userChoice.then((choiceResult) => {
+          if (choiceResult.outcome === 'accepted') {
+            console.log('PWA: User accepted install');
+          }
+          window._pwaInstallPrompt = null;
+        });
+      } else {
+        console.log('PWA: No prompt available');
       }
     };
   </script>

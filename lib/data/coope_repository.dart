@@ -1,8 +1,5 @@
-
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-import '../models/product.dart';
 import 'package:flutter/foundation.dart';
+import '../utils/app_config.dart';
 
 /// VERSIÃ“N MEJORADA con fuzzy matching y bÃºsqueda mÃ¡s flexible
 class CoopeRepository {
@@ -18,15 +15,15 @@ class CoopeRepository {
       print('[La Coope] Query original: "$query"');
       print('[La Coope] Query normalizado: "$normalizedQuery"');
       
+      // Base API URL
+      const String apiBase = 'https://api.lacoopeencasa.coop/api';
+      
       http.Response response;
-
-      // Public CORS proxy for Web
-      const String corsProxy = 'https://corsproxy.io/?';
       
       if (categoryId != null) {
           String endpoint = 'https://api.lacoopeencasa.coop/api/articulos/pagina';
           if (kIsWeb) {
-             endpoint = '$corsProxy${Uri.encodeComponent(endpoint)}';
+             endpoint = endpoint.replaceFirst('https://api.lacoopeencasa.coop/api', AppConfig.coopeProxy);
           }
           final categoryUrl = Uri.parse(endpoint);
           
@@ -155,10 +152,9 @@ class CoopeRepository {
     int page, 
     bool isPromo
   ) async {
-    const String corsProxy = 'https://corsproxy.io/?';
     String endpoint = 'https://api.lacoopeencasa.coop/api/articulos/pagina_busqueda';
     if (kIsWeb) {
-       endpoint = '$corsProxy${Uri.encodeComponent(endpoint)}';
+       endpoint = endpoint.replaceFirst('https://api.lacoopeencasa.coop/api', AppConfig.coopeProxy);
     }
     final searchUrl = Uri.parse(endpoint);
     
