@@ -11,8 +11,8 @@ class AppConfig {
   static const String updatesUrl = '$upzBackendUrl/projects/comprabien/updates/latest-apk.js';
   static const String updatesInfoUrl = '$upzBackendUrl/projects/comprabien/updates/version.js';
 
-  // UPZ Backend (Vercel)
-  static const String upzBackendUrl = 'https://upzbackend.vercel.app'; // <--- Ajustar si usaste otro nombre
+  // UPZ Backend (NGROK)
+  static const String upzBackendUrl = 'https://compra-bien.vercel.app/';
   static const String nsfwApiKey = 'upz_nsfw_prod_2024_x92k!';
 
   // Legacy/Reference (Deprecated)
