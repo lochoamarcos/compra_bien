@@ -1,20 +1,20 @@
 {
     "rewrites": [
         {
-            "source": "/api/super/carrefour/(.*)",
-            "destination": "https://www.carrefour.com.ar/$1"
+            "source": "/api/super/carrefour/:path*",
+            "destination": "https://www.carrefour.com.ar/:path*"
         },
         {
-            "source": "/api/super/vea/(.*)",
-            "destination": "https://www.vea.com.ar/$1"
+            "source": "/api/super/vea/:path*",
+            "destination": "https://www.vea.com.ar/:path*"
         },
         {
-            "source": "/api/super/monarca/(.*)",
-            "destination": "https://api.monarcadigital.com.ar/$1"
+            "source": "/api/super/monarca/:path*",
+            "destination": "https://api.monarcadigital.com.ar/:path*"
         },
         {
-            "source": "/api/super/coope/(.*)",
-            "destination": "https://api.lacoopeencasa.coop/api/$1"
+            "source": "/api/super/coope/:path*",
+            "destination": "https://api.lacoopeencasa.coop/api/:path*"
         },
         {
             "source": "/(.*)",

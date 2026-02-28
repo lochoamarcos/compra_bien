@@ -9,11 +9,7 @@ class MonarcaRepository {
   static const String baseUrl = 'https://api.monarcadigital.com.ar';
   Future<List<Product>> searchProducts(String query, {int page = 0, int size = 20}) async {
     String endpoint = '$baseUrl/products/search?query=$query&page=$page&size=$size';
-    if (kIsWeb) {
-      // Use internal Vercel rewrite proxy
-      const String monarcaUrl = 'https://api.monarcadigital.com.ar';
-      endpoint = endpoint.replaceFirst(monarcaUrl, AppConfig.monarcaProxy);
-    }
+    endpoint = AppConfig.getProxiedUrl(endpoint, AppConfig.monarcaProxy);
     final url = Uri.parse(endpoint);
     
     // On Web, we can't use IOClient to bypass SSL. The browser handles it.
@@ -106,9 +102,7 @@ class MonarcaRepository {
 
   Future<Map<String, dynamic>?> _fetchProductDetail(String id, http.Client client) async {
       String endpoint = '$baseUrl/products/$id';
-      if (kIsWeb) {
-        endpoint = endpoint.replaceFirst(baseUrl, AppConfig.monarcaProxy);
-      }
+      endpoint = AppConfig.getProxiedUrl(endpoint, AppConfig.monarcaProxy);
       final url = Uri.parse(endpoint);
 
       try {
@@ -128,9 +122,7 @@ class MonarcaRepository {
 
   Future<List<BankPromotion>> getBankPromotions() async {
       String endpoint = '$baseUrl/marketingPromotions/getValidPromotions';
-      if (kIsWeb) {
-        endpoint = endpoint.replaceFirst(baseUrl, AppConfig.monarcaProxy);
-      }
+      endpoint = AppConfig.getProxiedUrl(endpoint, AppConfig.monarcaProxy);
       final url = Uri.parse(endpoint);
       final client = http.Client();
 

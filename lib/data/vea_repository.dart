@@ -17,10 +17,7 @@ class VeaRepository {
     } else {
       endpoint += '&ft=$query';
     }
-    if (kIsWeb) {
-      // Use internal Vercel rewrite proxy
-      endpoint = endpoint.replaceFirst(baseUrl, AppConfig.veaProxy);
-    }
+    endpoint = AppConfig.getProxiedUrl(endpoint, AppConfig.veaProxy);
     final url = Uri.parse(endpoint);
      
     final client = http.Client();

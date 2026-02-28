@@ -24,9 +24,7 @@ class CoopeRepository {
       
       if (categoryId != null) {
           String endpoint = 'https://api.lacoopeencasa.coop/api/articulos/pagina';
-          if (kIsWeb) {
-             endpoint = endpoint.replaceFirst('https://api.lacoopeencasa.coop/api', AppConfig.coopeProxy);
-          }
+          endpoint = AppConfig.getProxiedUrl(endpoint, AppConfig.coopeProxy);
           final categoryUrl = Uri.parse(endpoint);
           
           final payload = {
@@ -155,9 +153,7 @@ class CoopeRepository {
     bool isPromo
   ) async {
     String endpoint = 'https://api.lacoopeencasa.coop/api/articulos/pagina_busqueda';
-    if (kIsWeb) {
-       endpoint = endpoint.replaceFirst('https://api.lacoopeencasa.coop/api', AppConfig.coopeProxy);
-    }
+    endpoint = AppConfig.getProxiedUrl(endpoint, AppConfig.coopeProxy);
     final searchUrl = Uri.parse(endpoint);
     
     // 1. Intentar bÃºsqueda principal

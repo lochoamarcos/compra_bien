@@ -16,10 +16,7 @@ class CarrefourRepository {
     } else {
       endpoint += '&ft=$query';
     }
-    if (kIsWeb) {
-      // Use internal Vercel rewrite proxy
-      endpoint = endpoint.replaceFirst(baseUrl, AppConfig.carrefourProxy);
-    }
+    endpoint = AppConfig.getProxiedUrl(endpoint, AppConfig.carrefourProxy);
     final url = Uri.parse(endpoint);
      
     final client = http.Client();
@@ -302,9 +299,7 @@ class CarrefourRepository {
         });
 
         String finalUrl = fullUrl.toString();
-        if (kIsWeb) {
-           finalUrl = finalUrl.replaceFirst('https://www.carrefour.com.ar', AppConfig.carrefourProxy);
-        }
+        finalUrl = AppConfig.getProxiedUrl(finalUrl, AppConfig.carrefourProxy);
 
         final res = await http.get(Uri.parse(finalUrl), headers: {
            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
