@@ -1,7 +1,4 @@
 {
-    "buildCommand": "flutter build web --release --web-renderer canvaskit",
-    "outputDirectory": "build/web",
-    "installCommand": "echo 'Flutter install handled by GitHub Actions'",
     "rewrites": [
         {
             "source": "/(.*)",
