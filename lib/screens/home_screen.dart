@@ -429,8 +429,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
            ],
          ),
         actions: [
-          // PWA Install Button (only on web, and only if not already standalone and only on mobile)
-          if (kIsWeb && !_isStandalone() && (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS))
+          // PWA Install Button (only on web, and only if not already standalone)
+          if (kIsWeb && !_isStandalone())
             Tooltip(
               message: 'Descargar app',
               child: InkWell(
@@ -451,7 +451,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 },
                 child: Container(
                   margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-                  padding: EdgeInsets.symmetric(horizontal: MediaQuery.of(context).size.width < 400 ? 6 : 10, vertical: 0),
+                  padding: EdgeInsets.symmetric(horizontal: MediaQuery.of(context).size.width < 400 ? 8 : 10, vertical: 0),
                   decoration: BoxDecoration(
                     color: const Color(0xFF00ACC1),
                     borderRadius: BorderRadius.circular(20),
