@@ -366,7 +366,9 @@ class _ProductCardState extends State<ProductCard> {
               ? (isDark ? const Color(0xFF00ACC1).withOpacity(0.2) : style.primaryColor.withOpacity(0.15))
               : (isDark ? const Color(0xFF2C2C2C) : const Color(0xFFF5F5F7)),
           borderRadius: BorderRadius.circular(compact ? 8 : 12),
-          border: isBest ? Border.all(color: const Color(0xFF00C853), width: 2) : Border.all(color: Colors.transparent, width: 2),
+          border: isSelected 
+              ? Border.all(color: style.primaryColor, width: 2)
+              : Border.all(color: Colors.transparent, width: 2),
         ),
         clipBehavior: Clip.antiAlias,
         child: Stack(
@@ -412,8 +414,10 @@ class _ProductCardState extends State<ProductCard> {
                             fontWeight: FontWeight.w900, 
                             fontSize: compact ? 13 : 15, 
                             color: isSelected 
-                              ? const Color(0xFF00C853) // GREEN PRICE ON SELECT
-                              : (isBest ? (isDark ? Colors.white : const Color(0xFF212121)) : (isDark ? Colors.white60 : const Color(0xFF757575)))
+                              ? (isDark 
+                                  ? (style.name == 'Monarca' ? const Color(0xFFFF600C) : (style.name == 'Carrefour' ? const Color(0xFFFF3E2F) : style.primaryColor))
+                                  : style.primaryColor)
+                              : (isBest ? const Color(0xFF00C853) : (isDark ? Colors.white60 : const Color(0xFF757575)))
                           ),
                         ),
                         Consumer<CartProvider>(
@@ -434,7 +438,7 @@ class _ProductCardState extends State<ProductCard> {
                                 style: TextStyle(
                                   fontSize: compact ? 10 : 12,
                                   fontWeight: FontWeight.bold,
-                                  color: isSelected ? const Color(0xFF00C853) : Colors.orange[800],
+                                  color: isSelected ? style.primaryColor : Colors.orange[800],
                                 ),
                               ),
                             );
