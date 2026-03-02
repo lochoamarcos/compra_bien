@@ -151,19 +151,26 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
                   ClipRRect(
                     borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
                     child: Container(
-                      height: 300,
                       width: double.infinity,
                       color: Colors.white,
                       child: widget.imageUrl != null 
-                        ? InteractiveViewer(
+                        ? ConstrainedBox(
+                            constraints: const BoxConstraints(maxHeight: 300),
                             child: CachedNetworkImage(
                               imageUrl: widget.imageUrl!,
                               fit: BoxFit.contain,
-                              placeholder: (_, __) => const Center(child: CircularProgressIndicator()),
+                              alignment: Alignment.center,
+                              placeholder: (_, __) => const SizedBox(
+                                height: 200,
+                                child: Center(child: CircularProgressIndicator()),
+                              ),
                               errorWidget: (_, __, ___) => const Icon(Icons.image_not_supported, size: 50, color: Colors.grey),
                             ),
                           )
-                        : const Icon(Icons.shopping_bag, size: 80, color: Colors.grey),
+                        : const SizedBox(
+                            height: 200,
+                            child: Icon(Icons.shopping_bag, size: 80, color: Colors.grey),
+                          ),
                     ),
                   ),
                   Positioned(
@@ -197,6 +204,20 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
                             children: [
                                Row(
                                  children: [
+                                   if (selectedStyle.name.isNotEmpty)
+                                     Padding(
+                                       padding: const EdgeInsets.only(right: 8.0),
+                                       child: ConstrainedBox(
+                                          constraints: const BoxConstraints(maxWidth: 40),
+                                          child: Image.asset(
+                                            'assets/supermarkets/${selectedStyle.name.toLowerCase().replaceAll(' ', '')}.png',
+                                            height: 22,
+                                            fit: BoxFit.contain,
+                                            cacheHeight: 80,
+                                            errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
+                                          ),
+                                        ),
+                                     ),
                                    Flexible(
                                      child: Text(
                                        selectedProd.name.toTitleCase(), 

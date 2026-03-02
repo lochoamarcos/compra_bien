@@ -268,42 +268,52 @@ class _ProductCardState extends State<ProductCard> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                         Row(
-                            children: [
-                               Expanded(
-                                  child: Text(
-                                     title, 
-                                     maxLines: 1, 
-                                     overflow: TextOverflow.ellipsis, 
-                                     style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)
-                                  ),
-                               ),
-                               Consumer<ProductProvider>(
-                                  builder: (context, prodProvider, child) {
-                                    if (!prodProvider.hasAnyReport(widget.result.ean)) return const SizedBox.shrink();
-                                    return IconButton(
-                                      padding: EdgeInsets.zero,
-                                      constraints: const BoxConstraints(),
-                                      icon: const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 24),
-                                      onPressed: () {
-                                         final rps = prodProvider.productReports[widget.result.ean] ?? [];
-                                         showModalBottomSheet(
-                                           context: context,
-                                           isScrollControlled: true,
-                                           backgroundColor: Colors.transparent,
-                                           builder: (ctx) => ProductReportHistoryModal(
-                                             productName: widget.result.name,
-                                             reports: rps,
+                         GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () => _showProductDetail(context, displayProduct.name, displayProduct.brand ?? '', displayProduct.imageUrl, availableProducts, _selectedMarketName),
+                            child: Column(
+                               crossAxisAlignment: CrossAxisAlignment.start,
+                               mainAxisSize: MainAxisSize.min,
+                               children: [
+                                  Row(
+                                     children: [
+                                        Expanded(
+                                           child: Text(
+                                              title, 
+                                              maxLines: 1, 
+                                              overflow: TextOverflow.ellipsis, 
+                                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)
                                            ),
-                                         );
-                                      },
-                                    );
-                                  }
-                               ),
-                            ],
+                                        ),
+                                        Consumer<ProductProvider>(
+                                           builder: (context, prodProvider, child) {
+                                             if (!prodProvider.hasAnyReport(widget.result.ean)) return const SizedBox.shrink();
+                                             return IconButton(
+                                               padding: EdgeInsets.zero,
+                                               constraints: const BoxConstraints(),
+                                               icon: const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 24),
+                                               onPressed: () {
+                                                  final rps = prodProvider.productReports[widget.result.ean] ?? [];
+                                                  showModalBottomSheet(
+                                                    context: context,
+                                                    isScrollControlled: true,
+                                                    backgroundColor: Colors.transparent,
+                                                    builder: (ctx) => ProductReportHistoryModal(
+                                                      productName: widget.result.name,
+                                                      reports: rps,
+                                                    ),
+                                                  );
+                                               },
+                                             );
+                                           }
+                                        ),
+                                     ],
+                                  ),
+                                  if (displayProduct.brand != null)
+                                      Text(displayProduct.brand!.toTitleCase(), style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+                               ],
+                            ),
                          ),
-                         if (displayProduct.brand != null)
-                             Text(displayProduct.brand!.toTitleCase(), style: TextStyle(fontSize: 11, color: Colors.grey[600])),
                          
                          const SizedBox(height: 8),
                          
@@ -467,7 +477,8 @@ class _ProductCardState extends State<ProductCard> {
 
   Widget _buildImageAndTitle(Product displayProduct, String title, String subtitle, String? imageUrl, List<Map<String, Object>> products) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return InkWell(
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: () => _showProductDetail(context, title, subtitle, imageUrl, products, _selectedMarketName),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
