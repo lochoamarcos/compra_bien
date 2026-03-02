@@ -204,9 +204,19 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
                             children: [
                                Row(
                                  children: [
+                                   Flexible(
+                                     child: Text(
+                                       selectedProd.name.toTitleCase(), 
+                                       style: TextStyle(
+                                         fontSize: 18, 
+                                         fontWeight: FontWeight.bold,
+                                         color: Theme.of(context).brightness == Brightness.dark ? Colors.white70 : Colors.black87
+                                       )
+                                     ),
+                                   ),
                                    if (selectedStyle.name.isNotEmpty)
                                      Padding(
-                                       padding: const EdgeInsets.only(right: 8.0),
+                                       padding: const EdgeInsets.only(left: 8.0),
                                        child: ConstrainedBox(
                                           constraints: const BoxConstraints(maxWidth: 40),
                                           child: Image.asset(
@@ -218,16 +228,6 @@ class _ProductDetailDialogState extends State<ProductDetailDialog> {
                                           ),
                                         ),
                                      ),
-                                   Flexible(
-                                     child: Text(
-                                       selectedProd.name.toTitleCase(), 
-                                       style: TextStyle(
-                                         fontSize: 18, 
-                                         fontWeight: FontWeight.bold,
-                                         color: Theme.of(context).brightness == Brightness.dark ? Colors.white70 : Colors.black87
-                                       )
-                                     ),
-                                   ),
                                    // SOCIAL INDICATOR clickable "!"
                                    Consumer<ProductProvider>(
                                      builder: (context, prodProvider, child) {
